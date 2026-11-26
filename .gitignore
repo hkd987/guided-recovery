@@ -7,3 +7,6 @@ __pycache__/
 .vscode/
 *_TTrace_*
 states/
+
+# Agent worktrees
+.claude/worktrees/
