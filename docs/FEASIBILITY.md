@@ -111,13 +111,24 @@ What it says:
   poor GPS 55% → 65%. Half the simulated dropouts are shared by both
   receivers (the canopy overhead shades both antennas), which limits it.
 
-### Backup kit
+### Backup kit (optional)
 
-The kit is optional; a basic pod is already fail-safe (any sensor failure
-ends in "stop steering"). With the kit fitted, the same normal flights land
-94.6% within 30 m (1,000 runs, no false fallbacks), and barometer or GPS
-failures that used to end guidance no longer do (fault table above). The
-watchdog is standard on every pod: [WATCHDOG.md](WATCHDOG.md), verified in
+The kit is optional and does not make the pod safer: a basic pod is already
+fail-safe, and its safety checks are the same with or without the kit. What
+the kit buys is flights that still come home when a sensor fails:
+
+| When this happens | Basic pod | With the kit |
+|---|---|---|
+| A barometer freezes or drifts under the canopy | spirals safely, 734/734 | keeps guiding, 787/787 |
+| GPS goes quiet under the canopy | spirals safely, 381/381 | keeps guiding on GPS 2, 393/393 |
+| Poor GPS all the way down (stress) | 54.6% within 30 m | 65.2% |
+| Nothing fails (1,000 flights) | 94.5% within 30 m | 94.6%, no false fallbacks |
+
+The "main fired" sense line adds an independent check on the canopy decision
+(`sense.main 2` requires it). The real-log replay already shows no early
+confirmation without it, so its value is as a second opinion, not a fix.
+
+The motor-driver watchdog is not part of the kit; it is standard on every pod: [WATCHDOG.md](WATCHDOG.md), verified in
 2,085 ngspice runs across tolerances, 3.0–3.6 V and 0–50 °C (asleep within
 0.15 s of the last pet, awake within 40 ms, asleep at power-up).
 

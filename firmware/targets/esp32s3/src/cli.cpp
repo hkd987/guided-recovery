@@ -33,9 +33,9 @@ void printStatus(const Snapshot& s) {
   const FlashLogInfo li = flashLogInfo();
   const uint8_t bh = st.baroHealth;
   Serial.printf("baro %s%s%s  gps2 %s%s\n", st.baroTrusted ? "trusted" : "NOT TRUSTED",
-                (bh & 8) ? ((bh & 2) ? ", baro 2 FAILED" : ", baro 2 ok") : ", single",
+                (bh & 8) ? ((bh & 2) ? ", baro 2 FAILED" : ", baro 2 ok") : ", one fitted (second is optional)",
                 (bh & 1) ? ", baro 1 FAILED" : ((bh & 4) ? ", DISAGREE" : ""),
-                st.gps2Present ? "fitted" : "none", st.gps2Present ? (st.gpsActive ? " (in use)" : " (standby)") : "");
+                st.gps2Present ? "fitted" : "not fitted (optional)", st.gps2Present ? (st.gpsActive ? " (in use)" : " (standby)") : "");
   Serial.printf("battery %.2f V  log %lu/%lu records  loop max %lu us, overruns %lu\n", s.batteryV,
                 static_cast<unsigned long>(li.used), static_cast<unsigned long>(li.capacity),
                 static_cast<unsigned long>(s.maxLoopUs), static_cast<unsigned long>(s.overruns));
@@ -115,6 +115,17 @@ void selftest() {
     Serial.printf("  INFO  second GPS (backup kit): %lu fixes\n", static_cast<unsigned long>(g_gps2.fixes));
     pass("second GPS answering");
   }
+
+  // Backup kit: optional. Say what is and isn't fitted, so a basic pod's
+  // self-test doesn't read as something missing.
+  if (!g_sensors.baro2 || !g_gps2.seen) {
+    Serial.printf("  INFO  optional backup kit:%s%s. Not needed for safety: without it a\n"
+                  "        failed sensor ends in a spiral instead of steering on.\n",
+                  g_sensors.baro2 ? "" : " no second barometer",
+                  g_gps2.seen ? "" : (g_sensors.baro2 ? " no second GPS" : ", no second GPS"));
+  }
+  if (g_settings.mainSense == 2)
+    Serial.println("  INFO  sense.main 2: no canopy is confirmed (so no steering) unless the main-fired line is ON");
 
   // Battery
   if (s.batteryV < 6.6f) fail("battery low or divider miswired (2S needs 6.6-8.4 V)");

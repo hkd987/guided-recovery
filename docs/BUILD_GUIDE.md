@@ -29,21 +29,6 @@ order.
 | 12 | Wire, connectors, 100 k + 33 k resistors | — | ~5 | Estimate |
 | 13 | **Motor-driver watchdog**: 2× 2N3904, 2N3906, 2× BAT85, 1 µF ×2, 1.5 µF, 8 resistors | [WATCHDOG.md](WATCHDOG.md) | ~3 | Standard. Holds the motor driver asleep unless the flight loop keeps proving it's alive |
 | | **Total** | | **≈ $194** | Optional ADXL375 high-g logger (Adafruit 5374, $24.95) brings it to ≈ $219 |
-
-### Optional backup kit
-
-None of this is needed for the pod to be safe: any sensor failure already
-ends in "stop steering". The kit lets more flights still come home when a
-sensor fails, and adds independent checks on the canopy-open decision. The
-firmware finds whatever is fitted.
-
-| Part | ≈ $ | Weight | What it buys |
-|---|---|---|---|
-| Second BMP390 (Adafruit 4816, SDO soldered to GND) | 11 | 1.5 g | Two barometers cross-check each other, GPS breaks ties: a failed one is dropped and guidance carries on |
-| "Main fired" sense line: opto-isolator (e.g. PC817) + resistor | 1 | 1 g | Independent proof the main came out. `set sense.main 2` makes it **required** for the canopy decision |
-| Second GPS (any M10 module, like item 4) | 21.50 | 6–10 g | Takes over if GPS 1 goes quiet. Helps most at sites with poor sky view |
-
-The backup kit adds ≈ $34 and 9–13 g (under 1% of a 1.5 kg rocket).
 | — | Test parafoils, 2–3 sizes (RC or balloon-payload market) | | TBD | Aim for **~8 m/s trim airspeed** at your pod + rocket weight (see FEASIBILITY.md) |
 
 **Changes from the spec's draft list (v0.1, ~$170):**
@@ -58,6 +43,43 @@ The backup kit adds ≈ $34 and 9–13 g (under 1% of a 1.5 kg rocket).
   about 1 s.
 - **BMI088 → LSM6DSO32 as the default IMU.** It's easier to buy, half the
   price, and its ±32 g range catches opening shocks. Both are supported.
+
+### Optional backup kit
+
+**You don't need it.** A basic pod (items 1–13) is already fail-safe: if a
+sensor stops making sense, the pod stops steering and spirals down slowly
+under its canopy. It never steers on a reading it can't believe. What the kit
+buys is **more flights that still land on the pad when a sensor fails**, plus
+an independent check that the main really came out. Fit all of it, part of it
+or none of it: the firmware finds what is there, and `selftest` lists what
+isn't.
+
+| Part | ≈ $ | Weight | What it buys |
+|---|---|---|---|
+| Second BMP390 (Adafruit 4816, SDO soldered to GND) | 11 | 1.5 g | If a barometer freezes or drifts, the pod drops it and keeps steering home instead of spiralling |
+| "Main fired" sense line: opto-isolator (e.g. PC817) + resistor | 1 | 1 g | Proof from your flight computer that the main came out. With `set sense.main 2`, the pod won't confirm a canopy without it |
+| Second GPS (any M10 module, like item 4) | 21.50 | 6–10 g | If GPS 1 goes quiet, the pod keeps steering on GPS 2 instead of spiralling. Helps most at sites with a poor view of the sky |
+
+The whole kit adds ≈ $34 and 9–13 g (under 1% of a 1.5 kg rocket).
+
+**What changes, in simulation:**
+
+| When this happens | Basic pod | With the kit |
+|---|---|---|
+| A barometer freezes or drifts under the canopy | stops steering, spirals down safely (734 of 734 flights) | keeps steering home (787 of 787) |
+| GPS goes quiet under the canopy | stops steering, spirals down safely (381 of 381) | keeps steering home on GPS 2 (393 of 393) |
+| Poor view of the sky all the way down | 55% land within 30 m | 65% |
+| A slow drogue looks like an open canopy | ruled out by barometer, accelerometer and GPS checks (none early in 125 real flight logs or 7,000 harsh simulated flights) | with `sense.main 2`, also needs your flight computer's own word |
+| Nothing fails | 94.5% land within 30 m | 94.6%: no cost, no false alarms |
+
+**What it doesn't buy:** a safer pod. Safety comes from the basic pod's
+checks, which are the same with or without the kit. Nor does it help with the
+biggest unknowns: the real canopy, winch force and opening shock (gates 5–6).
+If you add only one part, make it the $1 sense line on a dual-deploy rocket,
+or the second GPS if your field has trees or hills around it.
+
+The motor-driver watchdog (item 13) is **not** part of the kit: every pod has
+it.
 
 ## 2. Wire it
 
@@ -88,7 +110,7 @@ partition. Optional: flash a second Heltec V3 as a ground receiver with
 `pio run -e ground -t upload`. It shows the pod's phase, height and position
 on its own screen.
 
-With the "main fired" sense line fitted (backup kit), choose how much it
+With the "main fired" sense line fitted (optional backup kit), choose how much it
 counts: `set sense.main 1` (default) treats it as evidence like an opening
 jolt; `set sense.main 2` refuses to confirm a canopy without it. Use 2 only
 when the sense line is wired and bench-tested.

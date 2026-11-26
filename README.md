@@ -20,7 +20,8 @@ this OS onto it.
 | 4 | The real board flies simulated flights with its real winches | `grhil` over USB, 200 Hz | **Harness ready.** PASS with a stand-in board (20 flights, every frame answered); needs a real board |
 | 5–8 | Ground deploys, drop tests, flights | Field | Not started (needs hardware) |
 | Formal | Guardrails hold for **every** possible sensor/fault/restart sequence | TLA+ model checked with TLC; C++ traces validated against it | **PASS** 17 properties, 157,056 states, 7/7 injected bugs caught; 3,857/3,857 C++ steps conform |
-| Backup kit | Optional second barometer, second GPS, "main fired" sense line; standard motor-driver watchdog | Gate 2 faults with and without the kit; watchdog circuit in ngspice | **PASS** every barometer and GPS fault ends as specified (400 runs each, two batches); watchdog meets its timing in 2,085 circuit simulations |
+| Backup kit (optional) | Second barometer, second GPS, "main fired" sense line (≈ $34, 9–13 g). Not needed for safety: it turns "a sensor failed, spiral down safely" into "a sensor failed, still land on the pad" | Gate 2 faults with and without the kit | **PASS** barometer failures: 734/734 spiral safely without it, 787/787 still guide home with it. GPS loss: 381/381 spiral, 393/393 guide home on GPS 2. No change to normal flights (94.6%) |
+| Motor watchdog (standard) | A hung processor can't hold a brake: the winch driver sleeps unless the flight loop keeps proving it's alive | ngspice, across part tolerances, 3.0–3.6 V and 0–50 °C | **PASS** asleep within 0.15 s, in all 2,085 circuit simulations |
 
 Firmware for the ESP32-S3 (pod and LoRa ground receiver) **compiles**. It has
 **not yet run on hardware**. See [docs/FEASIBILITY.md](docs/FEASIBILITY.md)

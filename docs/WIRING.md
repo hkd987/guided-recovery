@@ -4,6 +4,10 @@ The pin map lives in `firmware/targets/esp32s3/src/board.h`. It assumes a
 **V3, V3.1 or V3.2** board. The **V4** uses GPIO 2, 5, 7, 26, 34 and 38–42 for
 its own LoRa amplifier, PSRAM and GNSS connector, so it needs a different map.
 
+Rows marked *optional backup kit* are extras: a basic pod leaves those pins
+unconnected and is just as safe ([BUILD_GUIDE.md](BUILD_GUIDE.md#optional-backup-kit)
+says what the kit buys). The motor-driver watchdog is not optional.
+
 | Function | Part pin | Heltec V3 GPIO | Notes |
 |---|---|---|---|
 | I2C SDA | IMU, BMP390, ADXL375 SDA | **41** | 400 kHz, sensors in parallel, 3.3 V |
@@ -18,12 +22,12 @@ its own LoRa amplifier, PSRAM and GNSS connector, so it needs a different map.
 | Left encoder | A / B | **4 / 7** | power encoders from **3.3 V** (outputs pull up to their supply) |
 | Right encoder | A / B | **2 / 26** | GPIO 26 is free on the V3 only |
 | Arming | reed switch to GND | **34** | magnet on = switch closed = disarmed (bench mode) |
-| Main-fired input (optional) | opto-isolator output to GND | **33** | never connect to the host's igniter circuit directly |
+| *Optional backup kit:* main-fired input | opto-isolator output to GND | **33** | never connect to the host's igniter circuit directly |
 | Buzzer | NPN base (via 1 kΩ) | **40** | magnetic buzzer: add a flyback diode |
 | Battery sense | 2S+ → 100 kΩ → GPIO → 33 kΩ → GND | **3** | calibrate with `set batt.scale` |
-| *Backup kit:* second barometer | BMP390 SDA / SCL on the same bus | **41 / 42** | set it to the **other** I2C address: on the Adafruit 4816, solder SDO to GND (0x76) on one board only. The firmware finds it on its own |
-| *Backup kit:* second GPS → ESP32 | GPS 2 **TX** | **19** | UART2 RX |
-| *Backup kit:* ESP32 → second GPS | GPS 2 **RX** | **39** (shared with GPS 1) | one TX line configures both receivers |
+| *Optional backup kit:* second barometer | BMP390 SDA / SCL on the same bus | **41 / 42** | set it to the **other** I2C address: on the Adafruit 4816, solder SDO to GND (0x76) on one board only. The firmware finds it on its own |
+| *Optional backup kit:* second GPS → ESP32 | GPS 2 **TX** | **19** | UART2 RX |
+| *Optional backup kit:* ESP32 → second GPS | GPS 2 **RX** | **39** (shared with GPS 1) | one TX line configures both receivers |
 | Onboard LED | — | 35 | built in |
 | OLED | — | 17 / 18 / 21, Vext 36 | built in |
 | LoRa SX1262 | — | 8–14 | built in |
