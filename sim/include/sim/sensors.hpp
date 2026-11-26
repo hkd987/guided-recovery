@@ -27,6 +27,7 @@ class SensorSuite {
   sim::V3 accelBias_, gyroBias_;
   double baroBias_ = 0.0;
   double gpsBN_ = 0.0, gpsBE_ = 0.0, gpsBU_ = 0.0;
+  double gpsDropUntil_ = -1.0;  // stress runs: end of the current dropout
   std::deque<PendingFix> pending_;
   gr::GpsFix lastFix_;
   double vbatt_ = 8.1;

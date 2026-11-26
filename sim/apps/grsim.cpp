@@ -6,6 +6,10 @@
 //   grsim single --seed S [--mode sitl|simple] [--fault NAME] [--trace FILE]
 //   grsim sweep  [--runs N] [--airspeeds 6,7,8,9] [--winds 2.2,4.5,6.7]
 //   grsim synth-logs [--count N] [--out DIR]
+//   grsim stress [--runs N] [--seed S] [--out DIR]               harsher-than-nominal conditions
+//
+// Stress dials (any command): --canopy-err L --turbulence L --swing L --gps L
+// with L = 0 (nominal), 1 or 2; see sim::StressLevels.
 //
 // Common options: --threads T, --wind-max M (m/s at 10 m), --airspeed V, --sink S,
 //                 --radius R (landing radius, m), --min-pct P (gate 1 pass mark)
@@ -24,6 +28,7 @@
 #include <thread>
 #include <vector>
 
+#include "gr/types.hpp"
 #include "sim/logs.hpp"
 #include "sim/report.hpp"
 #include "sim/runners.hpp"
@@ -78,6 +83,10 @@ ScenarioOptions scenarioOptions(const Args& a) {
   o.canopySink = a.num("sink", 3.5);
   if (a.has("dual-only")) o.dualDeployOnly = true;
   if (a.has("single-only")) o.singleDeployOnly = true;
+  o.stress.canopy = static_cast<int>(a.integer("canopy-err", 0));
+  o.stress.turbulence = static_cast<int>(a.integer("turbulence", 0));
+  o.stress.swing = static_cast<int>(a.integer("swing", 0));
+  o.stress.gps = static_cast<int>(a.integer("gps", 0));
   return o;
 }
 
@@ -253,6 +262,12 @@ int cmdSingle(const Args& a) {
   std::printf("seed %llu  mode %s  fault %s  %s deploy  wind %.1f m/s  Va0 %.2f vs0 %.2f\n",
               static_cast<unsigned long long>(s.seed), sitl ? "sitl" : "simple", faultName(s.fault),
               s.dualDeploy ? "dual" : "single", s.windRef, s.Va0, s.vs0);
+  std::printf("canopy truth: turn gain %.2f rad/s per brake, lag %.2f s, rigging bias %.3f rad/s", s.Kturn, s.turnTau,
+              s.turnBias);
+  if (s.fault == FaultType::Lopsided)
+    std::printf(", lopsided %.3f rad/s -> needs %.2f brake to fly straight", s.faultMagnitude,
+                -(s.turnBias + s.faultMagnitude) / s.Kturn);
+  std::printf("\n");
   std::printf("apogee %.0f m, deploy %.0f m AGL %.0f m from pad, landed %d, miss %.1f m, flight %.0f s\n", r.apogee,
               r.deployH, r.deployDist, r.landed, r.miss, r.flightTime);
   std::printf("canopy confirmed %d (delay %.2f s), nav-before-canopy %d, final phase %s, faults 0x%x, fallback delay %.1f s, "
@@ -301,6 +316,75 @@ int cmdSweep(const Args& a) {
   return 0;
 }
 
+// Stress sweep: the real flight core (SITL) under conditions harsher than
+// the nominal Monte Carlo, one dial at a time and then all together. Reports
+// accuracy and, more importantly, safety: steering before the canopy, crashes,
+// and which fallbacks fired (a spiral is the designed safe outcome).
+int cmdStress(const Args& a) {
+  const int n = static_cast<int>(a.integer("runs", 500));
+  const uint64_t seed = static_cast<uint64_t>(a.integer("seed", 70000));
+  const double radius = a.num("radius", 30.0);
+  const std::string out = a.str("out", "reports");
+  mkdirs(out);
+  struct Cond { const char* name; StressLevels st; };
+  const Cond conds[] = {
+      {"nominal", {0, 0, 0, 0}},
+      {"canopy model 20% off", {1, 0, 0, 0}},
+      {"canopy model 30% off", {2, 0, 0, 0}},
+      {"turbulence moderate", {0, 1, 0, 0}},
+      {"turbulence strong + thermals", {0, 2, 0, 0}},
+      {"swing and twist moderate", {0, 0, 1, 0}},
+      {"swing and twist strong", {0, 0, 2, 0}},
+      {"GPS degraded under canopy", {0, 0, 0, 1}},
+      {"GPS poor under canopy", {0, 0, 0, 2}},
+      {"combined moderate", {1, 1, 1, 1}},
+      {"combined harsh", {2, 2, 2, 2}},
+  };
+  std::string csv =
+      "condition,canopy,turbulence,swing,gps,runs,within_pct,cep50,p90,max,not_confirmed,nav_before_canopy,crashed,"
+      "timed_out,spiral_or_neutral,gps_lost,lopsided,winch,collapse,fence,confirm_delay_mean\n";
+  std::printf("Stress (SITL, %d runs each, winds to %.1f m/s, seed %llu)\n", n, a.num("wind-max", 4.47),
+              static_cast<unsigned long long>(seed));
+  std::printf("%-30s %7s %6s %6s %7s  %5s %5s %5s  %s\n", "condition", "<=30m", "CEP50", "p90", "max", "steer", "crash",
+              "noCnf", "fallbacks (gps/lopsided/winch/collapse/fence)");
+  int unsafe = 0;
+  for (const auto& c : conds) {
+    Args b = a;
+    ScenarioOptions so = scenarioOptions(b);
+    so.stress = c.st;
+    RunOptions ro = runOptions(b);
+    auto scs = makeScenarios(seed, n, so);
+    auto res = runParallel(scs, [&](const Scenario& sc) { return runSitl(sc, ro); }, threadCount(a));
+    Summary sm = summarize(res, radius);
+    std::string tag = c.name;
+    for (auto& ch : tag) if (ch == ' ' || ch == '%' || ch == '+') ch = '_';
+    writeRunsCsv(out + "/stress_" + tag + ".csv", res);
+    int gps = 0, lop = 0, winch = 0, col = 0, fence = 0;
+    for (const auto& r : res) {
+      if (r.faults & gr::kFaultGpsLost) ++gps;
+      if (r.faults & gr::kFaultLopsided) ++lop;
+      if (r.faults & (gr::kFaultWinchLeft | gr::kFaultWinchRight)) ++winch;
+      if (r.faults & gr::kFaultCollapse) ++col;
+      if (r.faults & gr::kFaultFence) ++fence;
+    }
+    unsafe += sm.navBeforeCanopy + sm.crashed;
+    std::printf("%-30s %6.1f%% %5.1fm %5.1fm %6.0fm  %5d %5d %5d  %d / %d / %d / %d / %d\n", c.name, sm.withinPct,
+                sm.cep50, sm.p90, sm.maxMiss, sm.navBeforeCanopy, sm.crashed, sm.notConfirmed, gps, lop, winch, col,
+                fence);
+    std::fflush(stdout);
+    char line[512];
+    std::snprintf(line, sizeof line, "%s,%d,%d,%d,%d,%d,%.2f,%.2f,%.2f,%.1f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.2f\n", c.name,
+                  c.st.canopy, c.st.turbulence, c.st.swing, c.st.gps, sm.runs, sm.withinPct, sm.cep50, sm.p90,
+                  sm.maxMiss, sm.notConfirmed, sm.navBeforeCanopy, sm.crashed, sm.timedOut, sm.unexpectedFallback, gps,
+                  lop, winch, col, fence, sm.confirmDelayMean);
+    csv += line;
+  }
+  writeFile(out + "/stress.csv", csv);
+  std::printf("steer = steering before the canopy was confirmed; noCnf = canopy never confirmed.\n");
+  std::printf("STRESS %s (safety: %d runs steered early or crashed)\n", unsafe ? "FAIL" : "SAFE", unsafe);
+  return unsafe ? 1 : 0;
+}
+
 int cmdSynthLogs(const Args& a) {
   const int n = static_cast<int>(a.integer("count", 200));
   const uint64_t seed = static_cast<uint64_t>(a.integer("seed", 1));
@@ -328,8 +412,9 @@ int main(int argc, char** argv) {
   if (a.cmd == "single") return cmdSingle(a);
   if (a.cmd == "sweep") return cmdSweep(a);
   if (a.cmd == "synth-logs") return cmdSynthLogs(a);
+  if (a.cmd == "stress") return cmdStress(a);
   std::fprintf(stderr,
-               "usage: grsim gate1|gate2|single|sweep|synth-logs [options]\n"
+               "usage: grsim gate1|gate2|single|sweep|synth-logs|stress [options]\n"
                "  see the comment at the top of sim/apps/grsim.cpp\n");
   return 2;
 }

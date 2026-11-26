@@ -18,12 +18,16 @@ class WindField {
   V3 at(double h, double t) const;
   // Steady part only (no gusts), used by the "perfect knowledge" gate-1 runner.
   V3 steadyAt(double h) const;
+  // Vertical air (m/s, down positive) under the canopy: stress runs only.
+  double verticalAt(double h, double t) const;
   void setFaultTime(double t) { faultTime_ = t; }
 
  private:
   const Scenario* s_ = nullptr;
   Rng rng_{1};
-  double gN_ = 0, gE_ = 0;
+  Rng rngV_{2};  // vertical air (stress runs only), separate so nominal gusts are unchanged
+  double gN_ = 0, gE_ = 0, gD_ = 0;
+  double thermalPhase_ = 0.0;
   double faultTime_ = 1e18;
 };
 

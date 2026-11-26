@@ -17,7 +17,19 @@ FaultType faultFromName(const std::string& s);
 enum class Expectation { Land, Spiral };
 Expectation expectedOutcome(FaultType f);
 
+// Stress dials beyond the nominal spread (0 = nominal, 1 = harsh, 2 = harsher).
+// They draw from their own random stream, so a scenario with every dial at 0
+// is bit-identical to one built before the dials existed.
+struct StressLevels {
+  int canopy = 0;      // canopy differs from the firmware's model: 1 = ~20 %, 2 = ~30 %
+  int turbulence = 0;  // 1 = 2x gusts + vertical air, 2 = 3x gusts + thermals
+  int swing = 0;       // sustained swing and twist on the harness: 1 = 7 deg / 9 deg/s, 2 = 14 deg / 20 deg/s
+  int gps = 0;         // under the canopy: 1 = degraded, 2 = poor (noisy, few satellites, dropouts)
+  bool any() const { return canopy || turbulence || swing || gps; }
+};
+
 struct ScenarioOptions {
+  StressLevels stress;
   double windMax = 4.47;          // m/s at 10 m (10 mph)
   double canopyAirspeed = 8.0;    // nominal truth canopy (firmware params may differ)
   double canopySink = 3.5;
@@ -81,6 +93,25 @@ struct Scenario {
   double gpsLatency = 0.10;
   bool gpsDropDuringBoost = false;
   double gpsReacquire = 4.0;      // s after burnout
+  // Stress extras (all zero / nominal unless a StressLevels dial is set)
+  double gustScale = 1.0;         // multiplies gustSigma (applied in makeScenario)
+  double vertGustSigma = 0.0;     // m/s, vertical air motion under the canopy
+  double vertGustTau = 6.0;       // s
+  double thermalAmp = 0.0;        // m/s peak updraft of passing thermals
+  double thermalPeriod = 40.0;    // s between thermal cores
+  double swingResidual = 0.03;    // rad of swing that never dies out
+  double yawWobbleAmp = 0.0;      // rad/s of harness twist seen by the pod's gyro
+  double yawWobblePeriod = 3.0;   // s
+  double gpsPosNoise = 0.3;       // m, white, per axis
+  double gpsVelNoise = 0.08;      // m/s, per axis
+  int gpsSvMin = 10, gpsSvRange = 8;
+  double gpsHAccBase = 1.2;       // m
+  double gpsBiasScale = 1.0;      // multiplies the bias wander under the canopy (multipath)
+  double gpsLatencyExtra = 0.0;   // s of extra latency under the canopy (not compensated)
+  double gpsDropRate = 0.0;       // dropouts per second under the canopy
+  double gpsDropMean = 1.0;       // s, mean dropout length (exponential)
+  int gpsRateDiv = 20;            // control frames per fix (20 = 10 Hz)
+  bool gpsStressCanopyOnly = true;  // degrade only once the canopy is out
   // Fault
   FaultType fault = FaultType::None;
   double faultAfterOpen = 20.0;   // s after the canopy inflates

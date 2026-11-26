@@ -24,6 +24,9 @@ void WindField::init(const Scenario& s, uint64_t seed) {
   rng_ = Rng(seed ^ 0xA5A5A5A5ULL);
   gN_ = rng_.normal(0.0, s.gustSigma);
   gE_ = rng_.normal(0.0, s.gustSigma);
+  rngV_ = Rng(seed ^ 0x5A5A5A5AULL);
+  gD_ = s.vertGustSigma > 0.0 ? rngV_.normal(0.0, s.vertGustSigma) : 0.0;
+  thermalPhase_ = rngV_.uniform(0.0, 2.0 * kPi);
 }
 
 void WindField::step(double dt) {
@@ -31,6 +34,22 @@ void WindField::step(double dt) {
   const double k = s_->gustSigma * std::sqrt(2.0 * a);
   gN_ += -gN_ * a + k * rng_.normal();
   gE_ += -gE_ * a + k * rng_.normal();
+  if (s_->vertGustSigma > 0.0) {
+    const double av = dt / s_->vertGustTau;
+    gD_ += -gD_ * av + s_->vertGustSigma * std::sqrt(2.0 * av) * rngV_.normal();
+  }
+}
+
+double WindField::verticalAt(double h, double t) const {
+  // Down-positive (NED). Vertical air dies out toward the ground.
+  if (s_->vertGustSigma <= 0.0 && s_->thermalAmp <= 0.0) return 0.0;
+  const double fade = clampd(h / 30.0, 0.0, 1.0);
+  double up = -gD_;
+  if (s_->thermalAmp > 0.0) {
+    const double c = std::sin(2.0 * kPi * t / s_->thermalPeriod + thermalPhase_);
+    up += s_->thermalAmp * (c > 0.0 ? c * c : 0.0);
+  }
+  return -up * fade;
 }
 
 V3 WindField::steadyAt(double h) const {
@@ -222,7 +241,8 @@ void World::step(double dt, const double duty[2], double vbatt) {
     case TruthStage::Inflating: {
       qbar_ = 0.0;
       const double ti = t_ - deployT_;
-      const V3 vss = V3{s_.Va0 * std::cos(psi_) + w.x, s_.Va0 * std::sin(psi_) + w.y, s_.vs0};
+      const V3 vss = V3{s_.Va0 * std::cos(psi_) + w.x, s_.Va0 * std::sin(psi_) + w.y,
+                        s_.vs0 + wind_.verticalAt(-pos_.z, t_)};
       vel_ += (vss - vel_) * clampd(dt / (s_.inflationTime / 3.0), 0.0, 1.0);
       pos_ += vel_ * dt;
       pendulum = true;
@@ -250,11 +270,11 @@ void World::step(double dt, const double duty[2], double vbatt) {
       psi_ = wrapPi(psi_ + r_ * dt);
       const double bank = std::atan(va * r_ / kG);
       const double vs = s_.vs0 * (1.0 + s_.brakeSinkGain * ds * ds) / std::cos(bank);
-      const V3 vt{va * std::cos(psi_) + w.x, va * std::sin(psi_) + w.y, vs};
+      const V3 vt{va * std::cos(psi_) + w.x, va * std::sin(psi_) + w.y, vs + wind_.verticalAt(-pos_.z, t_)};
       vel_ += (vt - vel_) * clampd(dt / 0.4, 0.0, 1.0);
       pos_ += vel_ * dt;
       pendulum = true;
-      swingAmp = s_.swingAmp * std::exp(-(t_ - openT_) / 4.0) + 0.03;
+      swingAmp = s_.swingAmp * std::exp(-(t_ - openT_) / 4.0) + s_.swingResidual;
       break;
     }
 
@@ -280,7 +300,12 @@ void World::step(double dt, const double duty[2], double vbatt) {
     const double om = 2.0 * kPi / 1.6;
     const double rollS = 0.6 * swingAmp * std::sin(om * t_ + swingP1_);
     const double pitchS = swingAmp * std::sin(om * t_ + swingP2_);
-    R_ = M3::euler(phi + rollS, theta + pitchS, psi_);
+    double twist = 0.0;  // harness twist: the pod yaws back and forth under the canopy
+    if (s_.yawWobbleAmp > 0.0 && stage_ == TruthStage::Canopy) {
+      const double ow = 2.0 * kPi / s_.yawWobblePeriod;
+      twist = (s_.yawWobbleAmp / ow) * std::sin(ow * t_ + swingP1_ + swingP2_);
+    }
+    R_ = M3::euler(phi + rollS, theta + pitchS, psi_ + twist);
     fBody_ = V3{0.0, 0.0, -fmag};
   } else if (stage_ == TruthStage::Drogue) {
     fBody_ = R_.tmul(fNed) + V3{rng_.normal(0, 2.0), rng_.normal(0, 2.0), rng_.normal(0, 2.0)};

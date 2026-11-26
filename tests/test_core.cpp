@@ -132,6 +132,64 @@ TEST(winch_detects_stall) {
   CHECK_NEAR(w.update(0.8f, 0, 8.0f, 0.005f), 0.0, 1e-6);  // motor cut after stall
 }
 
+// A spool jammed at "released" never moves, however often small corrections
+// nudge its target; the idle self-check must still exercise it and catch it.
+TEST(winch_jammed_near_zero_is_caught_by_self_check) {
+  WinchParams p;
+  WinchController w;
+  w.configure(p, 0);
+  bool stalled = false;
+  float t = 0.0f;
+  for (int i = 0; i < 4000 && !stalled; ++i, t += 0.005f) {
+    // Tiny corrections every 2 s (5 mm for 0.25 s), encoder stuck at 0.
+    const float target = std::fmod(t, 2.0f) < 0.25f ? 5.0f / p.travelMm : 0.0f;
+    w.update(target, 0, 8.0f, 0.005f);
+    stalled = w.stalled();
+  }
+  CHECK(stalled);
+  CHECK(t < 6.0f);  // within one idle period plus the exercise
+}
+
+namespace {
+// Feeds the steering loop a brake held hard over and a measured turn rate.
+bool runSteering(Steering& st, float rCmd, float diff, float rate, float seconds) {
+  for (float t = 0.0f; t < seconds; t += 0.005f) st.update(rCmd, 0.0f, rate, diff, 0.005f);
+  return st.lopsided();
+}
+}  // namespace
+
+// Brake pinned right, canopy hardly turns right: lopsided, even though the
+// Kalman trim test never becomes confident.
+TEST(steering_flags_canopy_that_cannot_turn) {
+  Params p;
+  Steering st(p.steer, p.canopy);
+  st.reset();
+  runSteering(st, 0.0f, 0.0f, 0.0f, 7.0f);  // settle after opening
+  CHECK(runSteering(st, 0.7f, 0.9f, 0.05f, 10.0f));
+}
+
+// Equally weak both ways is a weak canopy, not a lopsided one.
+TEST(steering_does_not_flag_weak_symmetric_canopy) {
+  Params p;
+  Steering st(p.steer, p.canopy);
+  st.reset();
+  runSteering(st, 0.0f, 0.0f, 0.0f, 7.0f);
+  bool flagged = runSteering(st, -0.7f, -0.9f, -0.2f, 4.0f);  // left: turns 0.2 rad/s at full brake
+  flagged = flagged || runSteering(st, 0.7f, 0.9f, 0.2f, 10.0f);  // right: same
+  CHECK(!flagged);
+}
+
+// Turns well one way, barely the other: lopsided.
+TEST(steering_flags_asymmetric_canopy) {
+  Params p;
+  Steering st(p.steer, p.canopy);
+  st.reset();
+  runSteering(st, 0.0f, 0.0f, 0.0f, 7.0f);
+  bool flagged = runSteering(st, -0.7f, -0.6f, -0.6f, 4.0f);  // left: 1 rad/s per unit brake
+  flagged = flagged || runSteering(st, 0.7f, 0.95f, 0.3f, 12.0f);  // right: 0.3 rad/s at full brake
+  CHECK(flagged);
+}
+
 TEST(winch_duty_capped_for_6v_motor) {
   WinchParams p;
   WinchController w;

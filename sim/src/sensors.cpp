@@ -57,9 +57,16 @@ void SensorSuite::sample(const World& w, const double duty[2], gr::Inputs& in) {
   }
 
   // ---- GPS, 10 Hz with latency and outages.
-  if (frame_ % 20 == 0) {
-    const double a = 0.1 / 100.0;  // bias wander, 100 s correlation
-    const double k = s_.gpsBiasSigma * std::sqrt(2.0 * a);
+  // Under the canopy a stressed scenario degrades the receiver (multipath,
+  // the canopy shading the sky). Nominal scenarios use the defaults
+  // throughout, with exactly the random draws they always had.
+  const bool underCanopy = w.stage() >= TruthStage::Inflating && w.stage() != TruthStage::Landed;
+  const bool degraded = underCanopy || !s_.gpsStressCanopyOnly;
+  const int rateDiv = degraded ? s_.gpsRateDiv : 20;
+  if (frame_ % static_cast<uint64_t>(rateDiv) == 0) {
+    const double dtFix = rateDiv == 20 ? 0.1 : rateDiv * 0.005;
+    const double a = dtFix / 100.0;  // bias wander, 100 s correlation
+    const double k = s_.gpsBiasSigma * std::sqrt(2.0 * a) * (degraded ? s_.gpsBiasScale : 1.0);
     gpsBN_ += -gpsBN_ * a + k * rng_.normal();
     gpsBE_ += -gpsBE_ * a + k * rng_.normal();
     gpsBU_ += -gpsBU_ * a + 2.0 * k * rng_.normal();
@@ -69,26 +76,33 @@ void SensorSuite::sample(const World& w, const double duty[2], gr::Inputs& in) {
         t < w.burnoutT() + s_.gpsReacquire)
       outage = true;
     if (s_.fault == FaultType::GpsLoss && w.faultActive()) outage = true;
+    if (degraded && s_.gpsDropRate > 0.0) {
+      if (t >= gpsDropUntil_ && rng_.uniform(0.0, 1.0) < s_.gpsDropRate * dtFix)
+        gpsDropUntil_ = t - s_.gpsDropMean * std::log(std::max(1e-9, rng_.uniform(0.0, 1.0)));
+      if (t < gpsDropUntil_) outage = true;
+    }
+    const double pn = degraded ? s_.gpsPosNoise : 0.3;
+    const double vn = degraded ? s_.gpsVelNoise : 0.08;
     if (!outage) {
       gr::GpsFix fx;
       const V3 p = w.pos();
       double lat, lon;
-      localToLatLon(s_.padLat, s_.padLon, p.x + gpsBN_ + rng_.normal(0, 0.3), p.y + gpsBE_ + rng_.normal(0, 0.3),
+      localToLatLon(s_.padLat, s_.padLon, p.x + gpsBN_ + rng_.normal(0, pn), p.y + gpsBE_ + rng_.normal(0, pn),
                     lat, lon);
       fx.fresh = true;
       fx.fixType = 3;
-      fx.numSv = static_cast<uint8_t>(10 + rng_.pick(8));
+      fx.numSv = static_cast<uint8_t>(degraded ? s_.gpsSvMin + rng_.pick(s_.gpsSvRange) : 10 + rng_.pick(8));
       fx.latE7 = static_cast<int32_t>(std::llround(lat * 1e7));
       fx.lonE7 = static_cast<int32_t>(std::llround(lon * 1e7));
-      fx.altMsl = static_cast<float>(s_.padElev + w.height() + gpsBU_ + rng_.normal(0, 0.8));
+      fx.altMsl = static_cast<float>(s_.padElev + w.height() + gpsBU_ + rng_.normal(0, (pn / 0.3) * 0.8));
       const V3 v = w.vel();
-      fx.velN = static_cast<float>(v.x + rng_.normal(0, 0.08));
-      fx.velE = static_cast<float>(v.y + rng_.normal(0, 0.08));
-      fx.velD = static_cast<float>(v.z + rng_.normal(0, 0.15));
-      fx.hAcc = static_cast<float>(1.2 + std::fabs(rng_.normal(0, 0.5)));
+      fx.velN = static_cast<float>(v.x + rng_.normal(0, vn));
+      fx.velE = static_cast<float>(v.y + rng_.normal(0, vn));
+      fx.velD = static_cast<float>(v.z + rng_.normal(0, (vn / 0.08) * 0.15));
+      fx.hAcc = static_cast<float>((degraded ? s_.gpsHAccBase : 1.2) + std::fabs(rng_.normal(0, 0.5)));
       fx.vAcc = fx.hAcc * 1.8f;
-      fx.sAcc = 0.15f;
-      pending_.push_back(PendingFix{t + s_.gpsLatency, fx});
+      fx.sAcc = static_cast<float>(degraded ? std::max(0.15, 1.8 * vn) : 0.15);
+      pending_.push_back(PendingFix{t + s_.gpsLatency + (degraded ? s_.gpsLatencyExtra : 0.0), fx});
     }
   }
   while (!pending_.empty() && pending_.front().releaseT <= t + 1e-9) {

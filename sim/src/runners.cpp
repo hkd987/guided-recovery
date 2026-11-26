@@ -20,6 +20,7 @@ RunResult baseResult(const Scenario& s) {
   r.fault = s.fault;
   r.dualDeploy = s.dualDeploy;
   r.windRef = s.windRef;
+  r.trueTrim = -s.turnBias / s.Kturn;
   return r;
 }
 

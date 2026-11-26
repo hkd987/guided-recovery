@@ -55,6 +55,7 @@ struct RunResult {
   double fallbackDelay = -1.0; // s from fault to spiral/neutral
   bool expectationMet = true;
   double maxCanopyDescent = 0.0;
+  double trueTrim = 0.0;       // brake asymmetry the canopy's rigging alone needs to fly straight (truth)
   std::string note;
 };
 

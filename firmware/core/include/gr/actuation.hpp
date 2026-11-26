@@ -21,6 +21,11 @@ struct BrakeCmd {
 // The brake asymmetry it needs just to fly straight is -bias/K; if that
 // exceeds lopsidedTrim the canopy is declared lopsided. Learning K as well
 // keeps a canopy that merely turns weakly from looking lopsided.
+//
+// That test needs the brakes to move both ways before it is confident. A
+// canopy pulling so hard that one brake stays pinned never gives it that, so
+// a second rule catches it directly: brake held near full travel, and the
+// canopy still turning far less than asked, for several seconds.
 class Steering {
  public:
   Steering(const SteeringParams& s, const CanopyParams& c) : s_(s), c_(c) {}
@@ -50,6 +55,10 @@ class Steering {
   float integ_ = 0.0f;
   float sinceReset_ = 0.0f;
   float lopsidedT_ = 0.0f;
+  float stuckT_ = 0.0f;
+  float eff_[2] = {0.0f, 0.0f};    // best turn per unit brake seen each way: right, left
+  float heldT_[2] = {0.0f, 0.0f};  // time the brake has been held past 40 % each way
+  float pinT_ = 0.0f, pinDir_ = 0.0f;  // continuous time pinned past stuckDiff, and which way
   bool lopsided_ = false;
 };
 
@@ -82,6 +91,7 @@ class WinchController {
   LowPass vel_{0.03f};
   float targetMm_ = 0.0f;
   float lastBaseMm_ = 0.0f;
+  float lastMovePosMm_ = 0.0f;  // spool position when it last actually moved
   float idleT_ = 0.0f;
   float exerciseT_ = -1.0f;
   float stallT_ = 0.0f;

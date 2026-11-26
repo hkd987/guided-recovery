@@ -75,15 +75,15 @@ void writeRunsCsv(const std::string& path, const std::vector<RunResult>& runs) {
   std::fprintf(f,
                "seed,fault,dual_deploy,wind_ref,apogee,deploy_h,deploy_dist,landed,land_n,land_e,miss,flight_time,"
                "canopy_confirmed,confirm_delay,nav_before_canopy,crashed,timed_out,final_phase,faults,"
-               "fault_exercised,fallback_delay,expectation_met,max_canopy_descent,note\n");
+               "fault_exercised,fallback_delay,expectation_met,max_canopy_descent,note,true_trim\n");
   for (const auto& r : runs) {
-    std::fprintf(f, "%llu,%s,%d,%.2f,%.1f,%.1f,%.1f,%d,%.2f,%.2f,%.2f,%.1f,%d,%.2f,%d,%d,%d,%s,%u,%d,%.2f,%d,%.2f,%s\n",
+    std::fprintf(f, "%llu,%s,%d,%.2f,%.1f,%.1f,%.1f,%d,%.2f,%.2f,%.2f,%.1f,%d,%.2f,%d,%d,%d,%s,%u,%d,%.2f,%d,%.2f,%s,%.3f\n",
                  static_cast<unsigned long long>(r.seed), faultName(r.fault), r.dualDeploy ? 1 : 0, r.windRef,
                  r.apogee, r.deployH, r.deployDist, r.landed ? 1 : 0, r.landN, r.landE, r.miss, r.flightTime,
                  r.canopyConfirmed ? 1 : 0, r.confirmDelay, r.navBeforeCanopy ? 1 : 0, r.crashed ? 1 : 0,
                  r.timedOut ? 1 : 0, gr::phaseName(static_cast<gr::Phase>(r.finalPhase)), r.faults,
                  r.faultExercised ? 1 : 0, r.fallbackDelay, r.expectationMet ? 1 : 0, r.maxCanopyDescent,
-                 r.note.c_str());
+                 r.note.c_str(), r.trueTrim);
   }
   std::fclose(f);
 }

@@ -88,6 +88,12 @@ struct SteeringParams {
   float lopsidedTime = 3.0f;    // s above the limit before declaring it
   float lopsidedSettle = 6.0f;  // s after canopy confirmation before judging
   float lopsidedMaxSd = 0.12f;  // only judge once the trim estimate is this certain
+  // Second lopsided rule, no statistics needed: one brake held near full
+  // travel and the canopy still can't make the turn it is asked for.
+  float stuckDiff = 0.75f;      // brake differential counted as "near full"
+  float stuckTurnFrac = 0.35f;  // achieved turn below this share of the command...
+  float stuckMinCmd = 0.2f;     // ...of a command at least this big (rad/s)
+  float stuckTime = 6.0f;       // s (leaky) before declaring it, judged only after 2 s pinned
 };
 
 struct WinchParams {
@@ -109,7 +115,7 @@ struct WinchParams {
 };
 
 struct SafetyParams {
-  float gpsTimeout = 2.0f;      // s without a usable fix ends guidance
+  float gpsTimeout = 3.5f;      // s without a usable fix ends guidance (dead-reckons through shorter gaps)
   float fenceRadius = 1000.0f;  // m from home ends guidance
   float collapseDescent = 12.0f;  // m/s
   float collapseTime = 2.0f;

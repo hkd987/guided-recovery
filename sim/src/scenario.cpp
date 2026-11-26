@@ -36,6 +36,61 @@ Expectation expectedOutcome(FaultType f) {
   }
 }
 
+namespace {
+
+// Extra spread for the stress dials, from a separate random stream.
+void applyStress(Scenario& s, const StressLevels& st, uint64_t seed) {
+  Rng r(seed * 0xD1B54A32D192ED03ULL + 0x5157ULL);
+  if (st.canopy > 0) {
+    // Total 1-sigma spread on airspeed and sink of ~20 % or ~30 % (the
+    // nominal draw already carries 6 %), turn gain 30 % / 45 %, and wider
+    // ranges for turn lag, rigging bias and brake effect.
+    const double sp = st.canopy == 1 ? 0.20 : 0.30;
+    const double extra = std::sqrt(sp * sp - 0.06 * 0.06);
+    s.Va0 *= clampd(1.0 + r.normal(0.0, extra), 0.55, 1.6);
+    s.vs0 *= clampd(1.0 + r.normal(0.0, extra), 0.55, 1.8);
+    const double kt = st.canopy == 1 ? 0.30 : 0.45;
+    s.Kturn = std::max(0.25, s.Kturn * (1.0 + r.normal(0.0, std::sqrt(kt * kt - 0.15 * 0.15))));
+    s.turnTau = r.uniform(0.4, st.canopy == 1 ? 1.3 : 1.6);
+    s.turnBias = r.normal(0.0, st.canopy == 1 ? 0.08 : 0.12);
+    s.brakeTravelMm *= 1.0 + r.normal(0.0, st.canopy == 1 ? 0.12 : 0.18);
+    s.brakeSpeedLoss = st.canopy == 1 ? r.uniform(0.15, 0.45) : r.uniform(0.10, 0.50);
+    s.brakeSinkGain = st.canopy == 1 ? r.uniform(0.15, 0.60) : r.uniform(0.10, 0.75);
+  }
+  if (st.turbulence > 0) {
+    s.gustScale = st.turbulence == 1 ? 2.0 : 3.0;
+    s.gustSigma *= s.gustScale;
+    s.gustTau = st.turbulence == 1 ? r.uniform(1.0, 3.0) : r.uniform(0.8, 2.5);
+    s.vertGustSigma = st.turbulence == 1 ? 0.5 : 1.0;
+    s.vertGustTau = r.uniform(3.0, 8.0);
+    if (st.turbulence >= 2) {
+      s.thermalAmp = r.uniform(1.0, 2.5);
+      s.thermalPeriod = r.uniform(20.0, 60.0);
+    }
+  }
+  if (st.swing > 0) {
+    s.swingResidual = st.swing == 1 ? 0.12 : 0.25;
+    s.swingAmp = std::max(s.swingAmp, st.swing == 1 ? 0.5 : 0.8);
+    s.yawWobbleAmp = st.swing == 1 ? 0.15 : 0.35;
+    s.yawWobblePeriod = r.uniform(2.0, 4.0);
+  }
+  if (st.gps > 0) {
+    const bool poor = st.gps >= 2;
+    s.gpsPosNoise = poor ? 2.0 : 1.0;
+    s.gpsVelNoise = poor ? 0.5 : 0.25;
+    s.gpsBiasScale = poor ? 3.0 : 2.0;
+    s.gpsSvMin = poor ? 5 : 6;
+    s.gpsSvRange = poor ? 3 : 4;
+    s.gpsHAccBase = poor ? 4.0 : 2.5;
+    s.gpsLatencyExtra = poor ? 0.20 : 0.10;
+    s.gpsDropRate = poor ? 1.0 / 15.0 : 1.0 / 30.0;
+    s.gpsDropMean = poor ? 1.5 : 1.0;
+    s.gpsRateDiv = poor ? 40 : 20;  // 5 Hz when poor
+  }
+}
+
+}  // namespace
+
 Scenario makeScenario(uint64_t seed, const ScenarioOptions& o) {
   Rng r(seed * 0x9E3779B97F4A7C15ULL + 12345);
   Scenario s;
@@ -100,14 +155,17 @@ Scenario makeScenario(uint64_t seed, const ScenarioOptions& o) {
   s.gpsDropDuringBoost = r.chance(0.4);
   s.gpsReacquire = r.uniform(1.0, 8.0);
 
+  if (o.stress.any()) applyStress(s, o.stress, seed);
+
   // Fault.
   s.fault = o.fault;
   s.faultAfterOpen = r.uniform(5.0, 30.0);
   s.faultSide = r.pick(2);
   switch (s.fault) {
     case FaultType::Lopsided:
-      // Needs 50-80 % brake on one side just to fly straight.
-      s.faultMagnitude = r.uniform(0.5, 0.8) * s.Kturn * (s.faultSide ? 1.0 : -1.0);
+      // Needs 50-80 % brake on one side just to fly straight, counting the
+      // canopy's own rigging bias (which can add to or cancel the fault).
+      s.faultMagnitude = r.uniform(0.5, 0.8) * s.Kturn * (s.faultSide ? 1.0 : -1.0) - s.turnBias;
       break;
     case FaultType::Gust:
       s.faultMagnitude = r.uniform(3.0, 6.0);  // m/s extra for a few seconds

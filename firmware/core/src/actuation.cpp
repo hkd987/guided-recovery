@@ -29,6 +29,11 @@ void Steering::reset() {
   integ_ = 0.0f;
   sinceReset_ = 0.0f;
   lopsidedT_ = 0.0f;
+  stuckT_ = 0.0f;
+  eff_[0] = eff_[1] = 0.0f;
+  heldT_[0] = heldT_[1] = 0.0f;
+  pinT_ = 0.0f;
+  pinDir_ = 0.0f;
   lopsided_ = false;
 }
 
@@ -92,6 +97,43 @@ BrakeCmd Steering::update(float rCmd, float sym, float yawRateMeas, float actual
   else lopsidedT_ = std::fmax(0.0f, lopsidedT_ - dt);
   if (lopsidedT_ >= s_.lopsidedTime) lopsided_ = true;
 
+  // Stuck: brake pinned toward the commanded turn, turn not happening.
+  // Each side's effectiveness (turn per unit of brake, with the brake held
+  // past 40 % for 2 s so the canopy has caught up) is remembered, so a canopy
+  // that is merely weak, equally weak both ways, is not called lopsided.
+  const float fade = std::exp(-dt / 60.0f);
+  for (int i = 0; i < 2; ++i) eff_[i] *= fade;
+  for (int i = 0; i < 2; ++i) {
+    const float sgn = i == 0 ? 1.0f : -1.0f;
+    if (actualDiff * sgn >= 0.4f) heldT_[i] += dt;
+    else heldT_[i] = 0.0f;
+    if (heldT_[i] > 2.0f && sinceReset_ > 2.0f)
+      eff_[i] = std::fmax(eff_[i], (r * sgn) / std::fabs(actualDiff));
+  }
+  const float dir = actualDiff >= s_.stuckDiff ? 1.0f : (actualDiff <= -s_.stuckDiff ? -1.0f : 0.0f);
+  // Judge only a brake held hard over for a while: weaving swaps sides every
+  // couple of seconds and the canopy's lag would read as "not turning".
+  pinT_ = (dir != 0.0f && dir == pinDir_) ? pinT_ + dt : 0.0f;
+  pinDir_ = dir;
+  bool stuck = false;
+  if (dir != 0.0f && pinT_ >= 2.0f && sinceReset_ > s_.lopsidedSettle) {
+    const int side = dir > 0.0f ? 0 : 1, other = 1 - side;
+    const float ach = r * dir;                         // turn achieved toward the pinned side
+    const float effHere = ach / std::fabs(actualDiff);
+    const bool otherKnown = eff_[other] > 0.0f;
+    const bool otherMuchBetter = otherKnown && eff_[other] >= 2.0f * std::fmax(effHere, 0.05f);
+    const bool otherAsWeak = otherKnown && !otherMuchBetter;
+    const float cmd = rCmd * dir;
+    if (cmd >= s_.stuckMinCmd) {
+      // Barely turns (unless the other side is just as weak), or clearly
+      // turns far better the other way.
+      stuck = (ach < s_.stuckTurnFrac * cmd && !otherAsWeak) || (ach < 0.6f * cmd && otherMuchBetter);
+    }
+  }
+  if (stuck) stuckT_ += dt;
+  else stuckT_ = std::fmax(0.0f, stuckT_ - 0.5f * dt);
+  if (stuckT_ >= s_.stuckTime) lopsided_ = true;
+
   return mixBrakes(sym, diff);
 }
 
@@ -112,6 +154,7 @@ void WinchController::reset() {
   init_ = false;
   posMm_ = lastPosMm_ = targetMm_ = 0.0f;
   lastBaseMm_ = 0.0f;
+  lastMovePosMm_ = 0.0f;
   idleT_ = 0.0f;
   exerciseT_ = -1.0f;
   vel_ = LowPass(0.03f);
@@ -131,14 +174,19 @@ float WinchController::update(float frac, int32_t counts, float batteryV, float 
   const float base = clampf(frac, 0.0f, 1.0f) * p_.travelMm;
   if (!powered) {
     targetMm_ = lastBaseMm_ = base;
+    lastMovePosMm_ = posMm_;
     idleT_ = 0.0f;
     exerciseT_ = -1.0f;
     stallT_ = 0.0f;
     return 0.0f;
   }
   // Periodic small exercise of an idle winch, so a jam shows up early.
-  if (std::fabs(base - lastBaseMm_) > 1.0f) { idleT_ = 0.0f; exerciseT_ = -1.0f; lastBaseMm_ = base; }
+  // "Idle" means the spool hasn't actually moved: a spool jammed near zero
+  // never moves, however often small corrections change its target.
+  if (std::fabs(posMm_ - lastMovePosMm_) > 2.0f) { lastMovePosMm_ = posMm_; idleT_ = 0.0f; }
   else idleT_ += dt;
+  // A real steering move takes priority over an exercise in progress.
+  if (std::fabs(base - lastBaseMm_) > 10.0f) { exerciseT_ = -1.0f; lastBaseMm_ = base; }
   float offset = 0.0f;
   if (exerciseT_ < 0.0f && idleT_ >= p_.exerciseIdle) exerciseT_ = 0.0f;
   if (exerciseT_ >= 0.0f) {
