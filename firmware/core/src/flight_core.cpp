@@ -58,6 +58,12 @@ FlightCore::FlightCore(const Params& p)
 void FlightCore::reset() {
   det_ = PhaseDetector(p_.det);
   det_.reset();
+  baro_.reset();
+  gpsSel_.reset();
+  baroBadT_ = 0.0f;
+  baroFailedSeen_ = 0;
+  gpsDescent_ = LowPass(1.5f);
+  gpsDescentT_ = -1e9f;
   att_.reset();
   alt_ = AltitudeFilter();
   wind_.reset(p_.canopy.airspeed);
@@ -159,7 +165,8 @@ void FlightCore::updatePadReferences(const Inputs& in, float dt) {
   (void)dt;
   // Home: average of good, stationary fixes while armed on the pad. Frozen
   // the moment a launch is suspected, and never changeable in flight.
-  const GpsFix& g = in.gps;
+  (void)in;
+  const GpsFix& g = gpsSel_.fix();
   if (g.fresh && !det_.launchCandidate() && st_.stage == FlightStage::Pad) {
     const float speed = std::sqrt(g.velN * g.velN + g.velE * g.velE);
     if (g.fixType >= 3 && g.numSv >= p_.det.homeMinSv && g.hAcc <= p_.det.homeMaxHAcc &&
@@ -240,6 +247,7 @@ void FlightCore::enterSpiral(uint16_t fault) {
 
 void FlightCore::checkSafety(const Inputs& in, float dt) {
   if (st_.stage != FlightStage::Canopy) return;
+  baroBadT_ = baro_.trusted() ? 0.0f : baroBadT_ + dt;
   if (st_.phase == Phase::Neutral || st_.phase == Phase::Landed) return;
 
   // Canopy collapse: falling far faster than any parafoil should.
@@ -256,6 +264,7 @@ void FlightCore::checkSafety(const Inputs& in, float dt) {
   if (st_.phase != Phase::Guided) return;
 
   if (t_ - st_.lastGoodGpsT > p_.safety.gpsTimeout) { enterSpiral(kFaultGpsLost); return; }
+  if (baroBadT_ >= p_.safety.baroUntrustedTime) { enterSpiral(kFaultBaro); return; }
   if (pos_.norm() > p_.safety.fenceRadius) { enterSpiral(kFaultFence); return; }
   if (winch_[0].stalled()) { enterSpiral(kFaultWinchLeft); return; }
   if (winch_[1].stalled()) { enterSpiral(kFaultWinchRight); return; }
@@ -307,9 +316,37 @@ const Outputs& FlightCore::update(const Inputs& in) {
     st_.yawRate = att_.initialized() ? att_.yawRate(in.imu.gyro) : 0.0f;
   }
 
-  // ---- Barometer
+  // ---- GPS receiver(s): receiver 1, or receiver 2 when fitted and 1 goes quiet.
+  const bool onPad =
+      st_.stage == FlightStage::Disarmed || (st_.stage == FlightStage::Pad && !det_.launchCandidate());
+  gpsSel_.update(t_, in.gps, in.gps2Present, in.gps2, onPad);
+  const GpsFix& gsel = gpsSel_.fix();
+  const bool gselGood = gsel.fresh && gsel.fixType >= 3 && gsel.numSv >= 5 && gsel.hAcc < 15.0f;
+  if (gselGood) {
+    gpsDescent_.update(gsel.velD, gpsDescentT_ < -1e8f ? 0.1f : t_ - gpsDescentT_);
+    gpsDescentT_ = t_;
+  }
+  st_.gps2Present = gpsSel_.present2();
+  st_.gpsActive = static_cast<uint8_t>(gpsSel_.active());
+
+  // ---- Barometer(s): one, or two cross-checked; GPS height breaks ties.
+  baro_.update(t_, in.baroFresh, in.pressurePa, in.baro2Present, in.baroFresh2, in.pressurePa2, onPad,
+               st_.stage == FlightStage::Descent || st_.stage == FlightStage::Canopy, gselGood, gsel.velD);
+  st_.baroTrusted = baro_.trusted();
+  st_.baroHealth = static_cast<uint8_t>((baro_.failed(0) ? 1 : 0) | (baro_.failed(1) ? 2 : 0) |
+                                        (baro_.disagree() ? 4 : 0) | (baro_.present2() ? 8 : 0));
+  const uint8_t failedNow = st_.baroHealth & 3;
+  if (failedNow != baroFailedSeen_) {
+    // A barometer was just dropped: re-zero the height filter on what's left
+    // and make the detector gather fresh evidence.
+    baroFailedSeen_ = failedNow;
+    if (baro_.trusted() && st_.groundRefValid && alt_.initialized())
+      alt_.reset(pressureToAltitude(baro_.pressure(), st_.groundPressure));
+    det_.restartDescentHistory();
+  }
   alt_.predict(dt);
-  if (in.baroFresh && in.pressurePa > 1000.0f) {
+  if (baro_.fresh() && baro_.pressure() > 1000.0f) {
+    const float pressure = baro_.pressure();
     const float bdt = lastBaroT_ < 0.0f ? 0.02f : t_ - lastBaroT_;
     lastBaroT_ = t_;
     if (!st_.groundRefValid || st_.stage == FlightStage::Disarmed) {
@@ -317,23 +354,23 @@ const Outputs& FlightCore::update(const Inputs& in) {
       // the pod is now, so arming always starts from zero at the pad. A slow
       // filter here once left the reference hundreds of metres off after a
       // move between fields (found by the gate-4 HIL harness).
-      groundP_.reset(in.pressurePa);
+      groundP_.reset(pressure);
       st_.groundRefValid = true;
       alt_.reset(0.0f);
     } else if (st_.stage == FlightStage::Pad && !det_.launchCandidate()) {
-      groundP_.update(in.pressurePa, bdt);
+      groundP_.update(pressure, bdt);
     }
     st_.groundPressure = groundP_.value();
-    if (st_.stage != FlightStage::Disarmed) alt_.update(pressureToAltitude(in.pressurePa, st_.groundPressure));
+    if (st_.stage != FlightStage::Disarmed) alt_.update(pressureToAltitude(pressure, st_.groundPressure));
   }
   st_.agl = alt_.altitude();
   st_.climbRate = alt_.climbRate();
   descent_.update(-st_.climbRate, dt);
 
   // ---- GPS
-  gpsFreshThisFrame_ = in.gps.fresh;
-  if (in.gps.fresh) {
-    const GpsFix& g = in.gps;
+  gpsFreshThisFrame_ = gsel.fresh;
+  if (gsel.fresh) {
+    const GpsFix& g = gsel;
     st_.numSv = g.numSv;
     st_.gpsGood = g.fixType >= 3 && g.numSv >= 5 && g.hAcc < 15.0f;
     if (st_.gpsGood) {
@@ -357,10 +394,13 @@ const Outputs& FlightCore::update(const Inputs& in) {
   di.t = t_;
   di.armed = in.armed;
   di.accelG = st_.accelG;
-  di.baroValid = alt_.initialized();
+  // An untrusted barometer can never confirm a canopy (or a launch).
+  di.baroValid = alt_.initialized() && baro_.trusted();
   di.agl = st_.agl;
   di.climbRate = st_.climbRate;
   di.mainFired = in.mainFiredInput;
+  di.gpsDescentValid = gpsDescent_.initialized() && t_ - gpsDescentT_ < 1.0f;
+  di.gpsDescent = gpsDescent_.value();
   const FlightStage before = det_.stage();
   det_.update(di, dt);
   st_.stage = det_.stage();

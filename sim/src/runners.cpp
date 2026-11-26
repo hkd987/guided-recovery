@@ -14,6 +14,17 @@ namespace {
 
 constexpr double kDt = 0.005;
 
+}  // namespace
+
+std::string RunResult::faultLabel() const {
+  std::string n = faultName(fault);
+  if (baro2) n += "+kit";
+  if (gps2) n += "+gps2";
+  return n;
+}
+
+namespace {
+
 RunResult baseResult(const Scenario& s) {
   RunResult r;
   r.seed = s.seed;
@@ -21,6 +32,8 @@ RunResult baseResult(const Scenario& s) {
   r.dualDeploy = s.dualDeploy;
   r.windRef = s.windRef;
   r.trueTrim = -s.turnBias / s.Kturn;
+  r.baro2 = s.baro2;
+  r.gps2 = s.gps2;
   return r;
 }
 
@@ -30,6 +43,8 @@ double fallbackLimit(FaultType f) {
     case FaultType::GpsLoss: return 5.0;
     case FaultType::WinchStall: return 15.0;
     case FaultType::Lopsided: return 25.0;
+    case FaultType::BaroStuck: return 10.0;
+    case FaultType::BaroDrift: return 12.0;
     default: return 0.0;
   }
 }
@@ -200,7 +215,7 @@ RunResult runSitl(const Scenario& s, const RunOptions& opt, std::vector<TraceRow
   // Did the injected fault end where it should?
   if (s.fault != FaultType::None) {
     const double end = r.landed ? w.landT() : w.t();
-    if (expectedOutcome(s.fault) == Expectation::Spiral) {
+    if (expectedOutcome(s.fault, s.baro2, s.gps2) == Expectation::Spiral) {
       const double limit = fallbackLimit(s.fault);
       r.faultExercised = w.openT() >= 0.0 && w.faultT() + limit < end;
       if (fallbackT >= 0.0) r.fallbackDelay = fallbackT - w.faultT();
@@ -209,8 +224,12 @@ RunResult runSitl(const Scenario& s, const RunOptions& opt, std::vector<TraceRow
         if (fallbackT >= 0.0 && r.fallbackDelay < 0.0) r.note = "fallback before fault";
       }
     } else {
-      r.faultExercised = w.openT() >= 0.0 && w.faultT() < end;
+      r.faultExercised = s.fault == FaultType::BaroDriftDrogue ? w.apogeeT() >= 0.0 && w.apogeeT() + 2.0 < end
+                                                               : w.openT() >= 0.0 && w.faultT() < end;
       r.expectationMet = r.landed && !r.crashed;
+      // With the backup sensor fitted, its failure must not end guidance.
+      if (isBaroFault(s.fault) && s.baro2) r.expectationMet = r.expectationMet && !(r.faults & gr::kFaultBaro);
+      if (s.fault == FaultType::GpsLoss && s.gps2) r.expectationMet = r.expectationMet && !(r.faults & gr::kFaultGpsLost);
     }
   }
   return r;

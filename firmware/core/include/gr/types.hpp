@@ -41,6 +41,12 @@ struct Inputs {
   bool magFresh = false;      // logged only; guidance does not need heading
   Vec3 magUt;
   GpsFix gps;
+  // Backup kit (optional): a second barometer and a second GPS receiver.
+  bool baro2Present = false;
+  bool baroFresh2 = false;
+  float pressurePa2 = 101325.0f;
+  bool gps2Present = false;
+  GpsFix gps2;
   int32_t encoder[2] = {0, 0};  // winch encoder counts, 0 = left, 1 = right
   bool armed = false;           // magnetic switch: true once the remove-before-flight magnet is pulled
   bool mainFiredInput = false;  // optional opto-isolated "main fired" line from the host computer
@@ -81,6 +87,7 @@ enum FaultBits : uint16_t {
   kFaultNoHome = 1 << 7,
   kFaultLowDeploy = 1 << 8,
   kFaultReset = 1 << 9,        // the processor restarted in flight and resumed
+  kFaultBaro = 1 << 10,        // no believable barometer (failed, or two that disagree)
 };
 
 const char* phaseName(Phase p);

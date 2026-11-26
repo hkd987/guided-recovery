@@ -48,7 +48,7 @@ fi
 echo "== 2. Witnesses (each must be reachable) =="
 for w in WitnessGuided WitnessGpsSpiral WitnessCollapse WitnessBenchJamFlies \
          WitnessNoHomeSpiral WitnessLandedNoCanopy WitnessArmedWithJam \
-         WitnessRestartRelease WitnessRestartGuides; do
+         WitnessRestartRelease WitnessRestartGuides WitnessBaroSpiral; do
   printf 'CONSTANT Mutation = "none"\nINIT Init\nNEXT Next\nINVARIANT %s\nCHECK_DEADLOCK FALSE\n' "$w" > "$WORK/$w.cfg"
   tlc "$WORK/$w.cfg" PodLogic.tla "$WORK/$w.log"
   if grep -q "Invariant $w is violated" "$WORK/$w.log"; then
@@ -60,7 +60,8 @@ for w in WitnessGuided WitnessGpsSpiral WitnessCollapse WitnessBenchJamFlies \
 done
 
 echo "== 3. Mutations (each known bug must be caught) =="
-for m in stale_candidate motors_in_descent home_unfrozen no_gps_failsafe disarm_in_flight resume_steering; do
+for m in stale_candidate motors_in_descent home_unfrozen no_gps_failsafe disarm_in_flight resume_steering \
+         no_baro_failsafe; do
   sed "s/Mutation = \"none\"/Mutation = \"$m\"/" PodLogic.cfg > "$WORK/mut_$m.cfg"
   tlc "$WORK/mut_$m.cfg" PodLogic.tla "$WORK/mut_$m.log"
   caught=$(grep -oE "(Invariant|Action property|Temporal properties) [A-Za-z]* ?(is )?violated|Action property [A-Za-z]+ of line [0-9]+ of module PodLogic is violated" "$WORK/mut_$m.log" | head -1 || true)

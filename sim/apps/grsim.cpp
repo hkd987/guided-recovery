@@ -87,6 +87,8 @@ ScenarioOptions scenarioOptions(const Args& a) {
   o.stress.turbulence = static_cast<int>(a.integer("turbulence", 0));
   o.stress.swing = static_cast<int>(a.integer("swing", 0));
   o.stress.gps = static_cast<int>(a.integer("gps", 0));
+  o.baro2 = a.has("baro2");
+  o.gps2 = a.has("gps2");
   return o;
 }
 
@@ -201,12 +203,22 @@ int cmdGate2(const Args& a) {
   Summary s1 = summarize(g1, radius);
 
   std::vector<Scenario> all = nominal;
-  const FaultType faultTypes[] = {FaultType::GpsLoss, FaultType::WinchStall, FaultType::Lopsided, FaultType::Gust,
-                                  FaultType::Shear};
+  // Each fault, on a basic pod and (where it matters) with the backup kit.
+  struct FaultCase { FaultType f; bool baro2, gps2; };
+  const FaultCase faultCases[] = {
+      {FaultType::GpsLoss, false, false},         {FaultType::WinchStall, false, false},
+      {FaultType::Lopsided, false, false},        {FaultType::Gust, false, false},
+      {FaultType::Shear, false, false},           {FaultType::GpsLoss, false, true},
+      {FaultType::BaroStuck, false, false},       {FaultType::BaroStuck, true, false},
+      {FaultType::BaroDrift, false, false},       {FaultType::BaroDrift, true, false},
+      {FaultType::BaroDriftDrogue, false, false}, {FaultType::BaroDriftDrogue, true, false},
+  };
   uint64_t fseed = seed + 1000000;
-  for (FaultType f : faultTypes) {
+  for (const auto& fc : faultCases) {
     ScenarioOptions fo = so;
-    fo.fault = f;
+    fo.fault = fc.f;
+    fo.baro2 = fo.baro2 || fc.baro2;
+    fo.gps2 = fo.gps2 || fc.gps2;
     for (int i = 0; i < nf; ++i) all.push_back(makeScenario(fseed++, fo));
   }
   auto res = runParallel(all, [&](const Scenario& s) { return runSitl(s, ro); }, threads);
@@ -326,7 +338,7 @@ int cmdStress(const Args& a) {
   const double radius = a.num("radius", 30.0);
   const std::string out = a.str("out", "reports");
   mkdirs(out);
-  struct Cond { const char* name; StressLevels st; };
+  struct Cond { const char* name; StressLevels st; bool gps2 = false; bool baro2 = false; };
   const Cond conds[] = {
       {"nominal", {0, 0, 0, 0}},
       {"canopy model 20% off", {1, 0, 0, 0}},
@@ -337,8 +349,11 @@ int cmdStress(const Args& a) {
       {"swing and twist strong", {0, 0, 2, 0}},
       {"GPS degraded under canopy", {0, 0, 0, 1}},
       {"GPS poor under canopy", {0, 0, 0, 2}},
+      {"GPS degraded + 2nd GPS", {0, 0, 0, 1}, true},
+      {"GPS poor + 2nd GPS", {0, 0, 0, 2}, true},
       {"combined moderate", {1, 1, 1, 1}},
       {"combined harsh", {2, 2, 2, 2}},
+      {"combined moderate + full kit", {1, 1, 1, 1}, true, true},
   };
   std::string csv =
       "condition,canopy,turbulence,swing,gps,runs,within_pct,cep50,p90,max,not_confirmed,nav_before_canopy,crashed,"
@@ -352,6 +367,8 @@ int cmdStress(const Args& a) {
     Args b = a;
     ScenarioOptions so = scenarioOptions(b);
     so.stress = c.st;
+    so.gps2 = so.gps2 || c.gps2;
+    so.baro2 = so.baro2 || c.baro2;
     RunOptions ro = runOptions(b);
     auto scs = makeScenarios(seed, n, so);
     auto res = runParallel(scs, [&](const Scenario& sc) { return runSitl(sc, ro); }, threadCount(a));

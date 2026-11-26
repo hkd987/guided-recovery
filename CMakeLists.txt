@@ -18,6 +18,7 @@ add_library(grcore STATIC
   firmware/core/src/flight_core.cpp
   firmware/core/src/ubx.cpp
   firmware/core/src/hil.cpp
+  firmware/core/src/redundancy.cpp
 )
 target_include_directories(grcore PUBLIC firmware/core/include)
 target_compile_options(grcore PRIVATE ${GR_WARNINGS} -Werror)

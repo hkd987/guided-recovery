@@ -9,13 +9,15 @@
 
 namespace sim {
 
-enum class FaultType { None = 0, GpsLoss, WinchStall, Lopsided, Gust, Shear };
+enum class FaultType { None = 0, GpsLoss, WinchStall, Lopsided, Gust, Shear, BaroStuck, BaroDrift, BaroDriftDrogue };
 const char* faultName(FaultType f);
 FaultType faultFromName(const std::string& s);
+bool isBaroFault(FaultType f);
 
-// What a fault is expected to end in.
+// What a fault is expected to end in. With the backup kit (second barometer,
+// second GPS) some failures no longer end guidance.
 enum class Expectation { Land, Spiral };
-Expectation expectedOutcome(FaultType f);
+Expectation expectedOutcome(FaultType f, bool baro2 = false, bool gps2 = false);
 
 // Stress dials beyond the nominal spread (0 = nominal, 1 = harsh, 2 = harsher).
 // They draw from their own random stream, so a scenario with every dial at 0
@@ -30,6 +32,8 @@ struct StressLevels {
 
 struct ScenarioOptions {
   StressLevels stress;
+  bool baro2 = false;             // backup kit: second barometer fitted
+  bool gps2 = false;              // second GPS receiver fitted
   double windMax = 4.47;          // m/s at 10 m (10 mph)
   double canopyAirspeed = 8.0;    // nominal truth canopy (firmware params may differ)
   double canopySink = 3.5;
@@ -112,6 +116,9 @@ struct Scenario {
   double gpsDropMean = 1.0;       // s, mean dropout length (exponential)
   int gpsRateDiv = 20;            // control frames per fix (20 = 10 Hz)
   bool gpsStressCanopyOnly = true;  // degrade only once the canopy is out
+  // Backup kit
+  bool baro2 = false, gps2 = false;
+  double baro2Bias = 0.0;         // Pa, unit-to-unit offset of the second barometer
   // Fault
   FaultType fault = FaultType::None;
   double faultAfterOpen = 20.0;   // s after the canopy inflates

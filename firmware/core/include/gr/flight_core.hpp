@@ -17,6 +17,7 @@
 #include "gr/params.hpp"
 #include "gr/phase_detector.hpp"
 #include "gr/records.hpp"
+#include "gr/redundancy.hpp"
 #include "gr/types.hpp"
 
 namespace gr {
@@ -48,6 +49,11 @@ struct Status {
   float trimNeeded = 0.0f;      // brake asymmetry the canopy needs to fly straight
   float yawRateFiltered = 0.0f;
   float launchTime = -1.0f, apogeeTime = -1.0f, canopyTime = -1.0f;
+  // Backup kit.
+  bool baroTrusted = true;
+  uint8_t baroHealth = 0;   // bit 0/1: barometer 1/2 failed, bit 2: disagreeing, bit 3: barometer 2 fitted
+  bool gps2Present = false;
+  uint8_t gpsActive = 0;    // 0 = receiver 1, 1 = receiver 2
 };
 
 // What must survive a processor restart in flight. The ESP32 target keeps
@@ -113,6 +119,12 @@ class FlightCore {
   Steering steer_;
   WinchController winch_[2];
   GeoOrigin home_;
+  BaroVoter baro_;
+  GpsSelector gpsSel_;
+  float baroBadT_ = 0.0f;
+  uint8_t baroFailedSeen_ = 0;  // voter's failed-sensor bits last cycle
+  LowPass gpsDescent_{1.5f};  // GPS Doppler descent rate, for the canopy cross-check
+  float gpsDescentT_ = -1e9f;
   Status st_;
   Outputs out_;
 

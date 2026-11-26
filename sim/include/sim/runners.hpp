@@ -56,6 +56,8 @@ struct RunResult {
   bool expectationMet = true;
   double maxCanopyDescent = 0.0;
   double trueTrim = 0.0;       // brake asymmetry the canopy's rigging alone needs to fly straight (truth)
+  bool baro2 = false, gps2 = false;  // backup kit fitted
+  std::string faultLabel() const;    // e.g. "baro_stuck+kit"
   std::string note;
 };
 

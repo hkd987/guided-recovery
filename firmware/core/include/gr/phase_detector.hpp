@@ -28,6 +28,9 @@ struct DetectorInput {
   float agl = 0.0f;         // m above the pad reference
   float climbRate = 0.0f;   // m/s, up positive
   bool mainFired = false;   // optional wired confirmation
+  // Independent descent rate from GPS (Doppler), when the pod has a fix.
+  bool gpsDescentValid = false;
+  float gpsDescent = 0.0f;  // m/s, down positive, smoothed over ~3 s
 };
 
 class PhaseDetector {
@@ -38,6 +41,13 @@ class PhaseDetector {
   // Descent or Canopy) with no launch candidate and burnout assumed.
   void resumeAt(FlightStage stage);
   void update(const DetectorInput& in, float dt);
+  // The barometer source changed (the voter dropped one): start the mean-
+  // descent history again, so no mixed data can reach a canopy decision.
+  void restartDescentHistory() {
+    histHead_ = histCount_ = 0;
+    histAcc_ = 0.0f;
+    streakActive_ = false;
+  }
 
   FlightStage stage() const { return stage_; }
   // True from the first sign of launch (before confirmation). The pad
@@ -91,6 +101,8 @@ class PhaseDetector {
   float histAcc_ = 0.0f;
   float belowMainT_ = -1.0f;       // dual deploy: first time below the main altitude + margin
   float belowMainExactT_ = -1.0f;  // dual deploy: first time below the main altitude itself
+  bool mainSeen_ = false;          // the "main fired" sense line has fired this flight
+  float gpsBandStart_ = -1.0f;     // when GPS descent entered the canopy band (-1: not in it)
 };
 
 }  // namespace gr

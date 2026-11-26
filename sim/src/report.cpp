@@ -28,14 +28,14 @@ Summary summarize(const std::vector<RunResult>& runs, double radius) {
     dH += r.deployH;
     dD += r.deployDist;
     if (r.fault != FaultType::None) {
-      FaultStats& f = s.faults[faultName(r.fault)];
+      FaultStats& f = s.faults[r.faultLabel()];
       ++f.runs;
       if (r.faultExercised) {
         ++f.exercised;
         if (r.expectationMet) ++f.met;
       }
     }
-    if (expectedOutcome(r.fault) == Expectation::Land) {
+    if (expectedOutcome(r.fault, r.baro2, r.gps2) == Expectation::Land && r.fault != FaultType::BaroDriftDrogue) {
       misses.emplace_back(r.landed ? r.miss : 1e9, r.seed);
       const auto ph = static_cast<gr::Phase>(r.finalPhase);
       if (r.fault == FaultType::None && (ph == gr::Phase::Spiral || ph == gr::Phase::Neutral)) ++s.unexpectedFallback;
@@ -78,7 +78,7 @@ void writeRunsCsv(const std::string& path, const std::vector<RunResult>& runs) {
                "fault_exercised,fallback_delay,expectation_met,max_canopy_descent,note,true_trim\n");
   for (const auto& r : runs) {
     std::fprintf(f, "%llu,%s,%d,%.2f,%.1f,%.1f,%.1f,%d,%.2f,%.2f,%.2f,%.1f,%d,%.2f,%d,%d,%d,%s,%u,%d,%.2f,%d,%.2f,%s,%.3f\n",
-                 static_cast<unsigned long long>(r.seed), faultName(r.fault), r.dualDeploy ? 1 : 0, r.windRef,
+                 static_cast<unsigned long long>(r.seed), r.faultLabel().c_str(), r.dualDeploy ? 1 : 0, r.windRef,
                  r.apogee, r.deployH, r.deployDist, r.landed ? 1 : 0, r.landN, r.landE, r.miss, r.flightTime,
                  r.canopyConfirmed ? 1 : 0, r.confirmDelay, r.navBeforeCanopy ? 1 : 0, r.crashed ? 1 : 0,
                  r.timedOut ? 1 : 0, gr::phaseName(static_cast<gr::Phase>(r.finalPhase)), r.faults,

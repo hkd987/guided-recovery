@@ -1,5 +1,6 @@
 // Unit tests for the flight core.
 #include <cmath>
+#include <functional>
 #include <cstring>
 #include <random>
 #include <vector>
@@ -10,6 +11,7 @@
 #include "gr/guidance.hpp"
 #include "gr/phase_detector.hpp"
 #include "gr/records.hpp"
+#include "gr/redundancy.hpp"
 #include "gr/ubx.hpp"
 #include "mini_test.hpp"
 
@@ -579,4 +581,165 @@ TEST(hil_board_answers_every_frame_and_honours_interlock) {
     }
   CHECK(replies == 400);
   CHECK(interlockFlag);
+}
+
+// ---------------------------------------------------------------- backup kit
+
+namespace {
+// ISA pressure at a height (m) above sea level.
+float isaP(float h) { return 101325.0f * std::pow(1.0f - 2.25577e-5f * h, 5.25588f); }
+
+struct VoterRun {
+  BaroVoter v;
+  float t = 0.0f;
+  // Pod descends at `rate` from h0; barometer 2 reads 40 Pa high (unit offset).
+  void run(float seconds, float& h, float rate, bool two, bool checkGps, bool gps,
+           const std::function<float(float, float)>& p1fn = nullptr) {
+    const bool pad = rate == 0.0f && !checkGps;  // standing on the pad
+    for (float e = 0.0f; e < seconds; e += 0.02f, t += 0.02f) {
+      h -= rate * 0.02f;
+      const float noise = 0.3f * std::sin(t * 37.0f);
+      const float p1 = p1fn ? p1fn(t, h) : isaP(h) + noise;
+      // Out of step, as in the pod: barometer 1 on even ticks, 2 on odd.
+      const int tick = static_cast<int>(std::lround(t / 0.02f));
+      v.update(t, tick % 2 == 0, p1, two, two && tick % 2 == 1, isaP(h) + 40.0f - noise, pad, checkGps, gps, rate);
+    }
+  }
+};
+}  // namespace
+
+TEST(baro_voter_two_agreeing_barometers_are_trusted) {
+  VoterRun r;
+  float h = 1500.0f;
+  r.run(2.0f, h, 0.0f, true, false, true);   // pad: learns the 40 Pa offset
+  r.run(20.0f, h, 6.0f, true, true, true);
+  CHECK(r.v.trusted());
+  CHECK(!r.v.failed(0) && !r.v.failed(1));
+  CHECK_NEAR(r.v.offset2(), 40.0, 1.0);
+  CHECK_NEAR(pressureToAltitude(r.v.pressure(), 101325.0f), h, 1.0);
+}
+
+TEST(baro_voter_drops_a_stuck_barometer) {
+  VoterRun r;
+  float h = 1500.0f;
+  r.run(2.0f, h, 0.0f, true, false, true);
+  float frozen = 0.0f;
+  r.run(10.0f, h, 6.0f, true, true, true, [&](float t, float hh) {
+    if (t < 6.0f) { frozen = isaP(hh); return frozen; }
+    return frozen;  // barometer 1 freezes at t = 6 s
+  });
+  CHECK(r.v.failed(0));
+  CHECK(!r.v.failed(1));
+  CHECK(r.v.trusted());
+  CHECK_NEAR(pressureToAltitude(r.v.pressure(), 101325.0f), h, 2.0);
+}
+
+TEST(baro_voter_gps_decides_which_drifting_barometer_is_wrong) {
+  VoterRun r;
+  float h = 1500.0f;
+  r.run(2.0f, h, 0.0f, true, false, true);
+  // Barometer 1 starts reading as if climbing 4 m/s from t = 4 s.
+  r.run(16.0f, h, 6.0f, true, true, true, [](float t, float hh) {
+    return isaP(hh + (t > 4.0f ? 4.0f * (t - 4.0f) : 0.0f));
+  });
+  CHECK(r.v.failed(0));
+  CHECK(!r.v.failed(1));
+  CHECK(r.v.trusted());
+}
+
+TEST(baro_voter_untrusted_when_two_disagree_and_no_gps) {
+  VoterRun r;
+  float h = 1500.0f;
+  r.run(2.0f, h, 0.0f, true, false, false);
+  r.run(16.0f, h, 6.0f, true, true, false, [](float t, float hh) {
+    return isaP(hh + (t > 4.0f ? 4.0f * (t - 4.0f) : 0.0f));
+  });
+  CHECK(!r.v.trusted());
+  CHECK(!r.v.failed(0) && !r.v.failed(1));  // can't tell which one is wrong
+}
+
+TEST(baro_voter_lone_barometer_checked_against_gps) {
+  VoterRun r;
+  float h = 1500.0f;
+  r.run(2.0f, h, 0.0f, false, false, true);
+  r.run(10.0f, h, 6.0f, false, true, true);
+  CHECK(r.v.trusted());  // agrees with GPS
+  r.run(14.0f, h, 6.0f, false, true, true, [&](float t, float hh) {
+    return isaP(hh + 5.0f * (t - 12.0f));  // reads 5 m/s too high from t = 12 s
+  });
+  CHECK(r.v.failed(0));
+  CHECK(!r.v.trusted());
+}
+
+TEST(baro_voter_lone_barometer_survives_an_ejection_spike) {
+  VoterRun r;
+  float h = 1500.0f;
+  r.run(2.0f, h, 0.0f, false, false, true);
+  r.run(20.0f, h, 25.0f, false, true, true, [](float t, float hh) {
+    const float tc = t - 10.0f;  // 500 Pa charge pressure, decaying in 0.12 s
+    return isaP(hh) + (tc >= 0.0f && tc < 0.6f ? 500.0f * std::exp(-tc / 0.12f) : 0.0f);
+  });
+  CHECK(r.v.trusted());
+  CHECK(!r.v.failed(0));
+}
+
+TEST(baro_voter_stale_barometer_untrusted_then_back) {
+  BaroVoter v;
+  float t = 0.0f;
+  for (; t < 2.0f; t += 0.02f) v.update(t, true, isaP(1500.0f), false, false, 0.0f, true, false, false, 0.0f);
+  CHECK(v.trusted());
+  for (float e = 0.0f; e < 1.0f; e += 0.02f, t += 0.02f) v.update(t, false, 0.0f, false, false, 0.0f, false, false, false, 0.0f);
+  CHECK(!v.trusted());
+  for (float e = 0.0f; e < 0.1f; e += 0.02f, t += 0.02f) v.update(t, true, isaP(1500.0f), false, false, 0.0f, false, false, false, 0.0f);
+  CHECK(v.trusted());
+}
+
+TEST(gps_selector_fails_over_and_corrects_offset) {
+  GpsSelector g;
+  GpsFix a, b;
+  a.fresh = b.fresh = true;
+  a.fixType = b.fixType = 3;
+  a.numSv = b.numSv = 10;
+  a.hAcc = b.hAcc = 1.5f;
+  a.latE7 = 400000000; a.lonE7 = -1050000000;
+  b.latE7 = 400000020; b.lonE7 = -1050000010;  // receiver 2 reads ~2 m off
+  float t = 0.0f;
+  for (; t < 5.0f; t += 0.1f) g.update(t, a, true, b, true);  // pad
+  CHECK(g.active() == 0);
+  GpsFix quiet = a;
+  quiet.fresh = false;
+  for (float e = 0.0f; e < 1.0f; e += 0.1f, t += 0.1f) g.update(t, quiet, true, b, false);
+  CHECK(g.active() == 1);
+  CHECK(std::abs(g.fix().latE7 - a.latE7) <= 1);
+  CHECK(std::abs(g.fix().lonE7 - a.lonE7) <= 1);
+}
+
+TEST(gps_selector_without_second_receiver_passes_receiver_one_through) {
+  GpsSelector g;
+  GpsFix a;
+  a.fresh = true; a.fixType = 3; a.numSv = 9; a.hAcc = 2.0f; a.latE7 = 123; a.lonE7 = 456; a.altMsl = 1501.5f;
+  GpsFix none;
+  g.update(0.1f, a, false, none, true);
+  CHECK(g.fix().fresh && g.fix().latE7 == 123 && g.fix().altMsl == 1501.5f);
+  a.fresh = false;
+  g.update(0.2f, a, false, none, true);
+  CHECK(!g.fix().fresh);
+}
+
+// Sense line "required": no canopy without it, however good the descent.
+TEST(detector_sense_line_required_mode) {
+  for (int fire = 0; fire < 2; ++fire) {
+    DetectorParams p;
+    p.mainSense = 2;
+    DetFlight f(p);
+    f.toApogee();
+    for (int i = 0; i < 2000; ++i) f.step(1.0f, -20.0f);  // drogue
+    if (fire) {
+      DetectorInput d = di(f.t, 6.0f, f.h, -10.0f);
+      d.mainFired = true;
+      f.d.update(d, 0.005f);
+    }
+    for (int i = 0; i < 3000; ++i) f.step(1.0f, -5.0f);   // 15 s steady canopy descent
+    CHECK((f.d.stage() == FlightStage::Canopy) == (fire == 1));
+  }
 }

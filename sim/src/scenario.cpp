@@ -12,6 +12,9 @@ const char* faultName(FaultType f) {
     case FaultType::Lopsided: return "lopsided";
     case FaultType::Gust: return "gust";
     case FaultType::Shear: return "shear";
+    case FaultType::BaroStuck: return "baro_stuck";
+    case FaultType::BaroDrift: return "baro_drift";
+    case FaultType::BaroDriftDrogue: return "baro_drift_drogue";
   }
   return "?";
 }
@@ -22,15 +25,26 @@ FaultType faultFromName(const std::string& s) {
   if (s == "lopsided") return FaultType::Lopsided;
   if (s == "gust") return FaultType::Gust;
   if (s == "shear") return FaultType::Shear;
+  if (s == "baro_stuck") return FaultType::BaroStuck;
+  if (s == "baro_drift") return FaultType::BaroDrift;
+  if (s == "baro_drift_drogue") return FaultType::BaroDriftDrogue;
   return FaultType::None;
 }
 
-Expectation expectedOutcome(FaultType f) {
+bool isBaroFault(FaultType f) {
+  return f == FaultType::BaroStuck || f == FaultType::BaroDrift || f == FaultType::BaroDriftDrogue;
+}
+
+Expectation expectedOutcome(FaultType f, bool baro2, bool gps2) {
   switch (f) {
     case FaultType::GpsLoss:
+      return gps2 ? Expectation::Land : Expectation::Spiral;  // receiver 2 takes over
     case FaultType::WinchStall:
     case FaultType::Lopsided:
       return Expectation::Spiral;
+    case FaultType::BaroStuck:
+    case FaultType::BaroDrift:
+      return baro2 ? Expectation::Land : Expectation::Spiral;  // barometer 2 takes over
     default:
       return Expectation::Land;
   }
@@ -156,6 +170,19 @@ Scenario makeScenario(uint64_t seed, const ScenarioOptions& o) {
   s.gpsReacquire = r.uniform(1.0, 8.0);
 
   if (o.stress.any()) applyStress(s, o.stress, seed);
+
+  // Backup kit and barometer faults draw from their own stream too.
+  {
+    Rng rk(seed * 0x94D049BB133111EBULL + 0xB4C0ULL);
+    s.baro2 = o.baro2;
+    s.gps2 = o.gps2;
+    s.baro2Bias = rk.normal(0.0, 50.0);
+    if (o.fault == FaultType::BaroDrift) s.faultMagnitude = rk.uniform(3.0, 6.0) * (rk.chance(0.5) ? 1.0 : -1.0);
+    if (o.fault == FaultType::BaroDriftDrogue) {
+      s.dualDeploy = true;                    // the dangerous case: drogue descent made to look like a canopy
+      s.faultMagnitude = rk.uniform(8.0, 14.0);  // m/s of false climb
+    }
+  }
 
   // Fault.
   s.fault = o.fault;

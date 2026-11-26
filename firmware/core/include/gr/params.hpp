@@ -39,12 +39,19 @@ struct DetectorParams {
   float steadySpread = 4.0f;   // m/s, max minus min of that mean within the streak
   float confirmTime = 2.5f;    // s of steady in-band descent after a jolt
   float confirmTimeNoJolt = 7.0f;  // s of steady in-band descent with no jolt seen
+  // With a GPS fix, its own descent rate must agree: a barometer that drifts
+  // can't make a drogue look like a canopy. Band widened by this margin.
+  float gpsBandMargin = 2.0f;      // m/s
   float minGuidedAlt = 25.0f;  // m AGL; confirmed lower than this means brakes stay released
   // Dual deploy: the main altitude set on the host flight computer. Above it
   // (plus max(15 m, 10%) for the two barometers disagreeing) nothing counts
   // as canopy evidence, so a slow drogue cannot pass for the canopy.
   // 0 = single deploy / not set (parafoil out at apogee).
   float mainAlt = 0.0f;  // m AGL
+  // Optional "main fired" sense line (opto-isolated from the host's main
+  // channel): 0 = ignore the input, 1 = counts as an opening jolt,
+  // 2 = required: no canopy is ever confirmed without it.
+  uint8_t mainSense = 1;
   // Landing.
   float landedClimb = 0.6f;    // |m/s|
   float landedTime = 4.0f;
@@ -121,6 +128,7 @@ struct SafetyParams {
   float collapseTime = 2.0f;
   float lowBatteryV = 6.4f;     // 2S at 3.2 V/cell
   float lowBatteryTime = 3.0f;
+  float baroUntrustedTime = 1.0f;  // s with no believable barometer ends guidance
   float spiralBrake = 0.35f;
 };
 

@@ -27,13 +27,14 @@ CONSTANT Mutation
   \* "none" = the real logic. The other values each re-introduce one bug so
   \* we can see TLC catch it: "stale_candidate" (the bug this model found),
   \* "motors_in_descent", "home_unfrozen", "no_gps_failsafe", "disarm_in_flight",
-  \* "resume_steering" (a restart under canopy goes straight back to guiding).
+  \* "resume_steering" (a restart under canopy goes straight back to guiding),
+  \* "no_baro_failsafe" (no believable barometer, and the pod keeps guiding).
 
 Stages == {"Disarmed", "Pad", "Ascent", "Descent", "Canopy", "Landed"}
 Phases == {"Disarmed", "Pad", "Ascent", "Descent", "Guided", "Spiral", "Neutral", "Landed"}
 FaultNames == {"GpsLost", "Fence", "WinchL", "WinchR", "Lopsided", "Collapse",
-               "LowBattery", "NoHome", "LowDeploy", "Reset"}
-SpiralReasons == {"GpsLost", "Fence", "WinchL", "WinchR", "Lopsided", "LowBattery", "NoHome"}
+               "LowBattery", "NoHome", "LowDeploy", "Reset", "Baro"}
+SpiralReasons == {"GpsLost", "Fence", "WinchL", "WinchR", "Lopsided", "LowBattery", "NoHome", "Baro"}
 Homes == 0..2   \* 0 = no home point; 1 and 2 = two different averaged GPS positions
 InFlight == {"Ascent", "Descent", "Canopy"}
 
@@ -59,7 +60,7 @@ NoInput == [armed |-> FALSE, benchReq |-> FALSE, reset |-> FALSE,
             accel |-> FALSE, baroConfirm |-> FALSE, candTimeout |-> FALSE,
             baroLaunch |-> FALSE, homeFix |-> 0, apogee |-> FALSE,
             steady |-> FALSE, landed |-> FALSE, lowDeploy |-> FALSE,
-            gps |-> FALSE, fence |-> FALSE, lopsided |-> FALSE, lowBatt |-> FALSE,
+            gps |-> FALSE, baro |-> FALSE, fence |-> FALSE, lopsided |-> FALSE, lowBatt |-> FALSE,
             collapse |-> FALSE, stallL |-> FALSE, stallR |-> FALSE,
             landedTimeout |-> FALSE]
 
@@ -76,15 +77,15 @@ InputsFor(x) ==
              : a \in B, ap \in B, h \in (IF Mutation = "home_unfrozen" THEN Homes ELSE {0}) }
     [] x.stage = "Descent" ->
          { [NoInput EXCEPT !.armed = a, !.steady = st, !.landed = ld, !.lowDeploy = lo,
-                           !.gps = g, !.fence = f, !.lopsided = lp, !.lowBatt = lb,
+                           !.gps = g, !.baro = bo, !.fence = f, !.lopsided = lp, !.lowBatt = lb,
                            !.collapse = c, !.stallL = sl, !.stallR = sr]
-             : a \in B, st \in B, ld \in B, lo \in B, g \in B, f \in B, lp \in B,
+             : a \in B, st \in B, ld \in B, lo \in B, g \in B, bo \in B, f \in B, lp \in B,
                lb \in B, c \in B, sl \in B, sr \in B }
     [] x.stage = "Canopy" ->
-         { [NoInput EXCEPT !.armed = a, !.landed = ld, !.gps = g, !.fence = f,
+         { [NoInput EXCEPT !.armed = a, !.landed = ld, !.gps = g, !.baro = bo, !.fence = f,
                            !.lopsided = lp, !.lowBatt = lb, !.collapse = c,
                            !.stallL = sl, !.stallR = sr]
-             : a \in B, ld \in B, g \in B, f \in B, lp \in B, lb \in B, c \in B,
+             : a \in B, ld \in B, g \in B, bo \in B, f \in B, lp \in B, lb \in B, c \in B,
                sl \in B, sr \in B }
     [] x.stage = "Landed" ->
          { [NoInput EXCEPT !.armed = a, !.landedTimeout = lt, !.stallL = sl, !.stallR = sr]
@@ -153,6 +154,7 @@ Update(x, in) ==
                ELSE IF in.collapse THEN [phase |-> "Neutral", faults |-> f1 \cup {"Collapse"}]
                ELSE IF ph1 # "Guided" THEN [phase |-> ph1, faults |-> f1]
                ELSE IF in.gps /\ Mutation # "no_gps_failsafe" THEN Spiral(f1, "GpsLost")
+               ELSE IF in.baro /\ Mutation # "no_baro_failsafe" THEN Spiral(f1, "Baro")
                ELSE IF in.fence    THEN Spiral(f1, "Fence")
                ELSE IF stL         THEN Spiral(f1, "WinchL")
                ELSE IF stR         THEN Spiral(f1, "WinchR")
@@ -171,7 +173,7 @@ Update(x, in) ==
                          \cup (IF mot /\ in.stallR THEN {"WinchR"} ELSE {})
   IN [stage |-> d.stage, phase |-> ph, cand |-> d.cand, home |-> home1, bench |-> bench1,
       motors |-> mot, steer |-> ph \in {"Guided", "Spiral"}, faults |-> f2,
-      hazard |-> (in.gps \/ in.fence \/ in.lopsided \/ in.lowBatt \/ in.collapse),
+      hazard |-> (in.gps \/ in.baro \/ in.fence \/ in.lopsided \/ in.lowBatt \/ in.collapse),
       rc |-> IF d.stage = "Disarmed" THEN FALSE ELSE r.rc]
 
 (* A processor restart in flight (brownout, watchdog, panic), followed by    *)
@@ -282,4 +284,5 @@ WitnessLandedNoCanopy == ~(s.phase = "Landed" /\ s.faults = {} /\ s.motors)
 WitnessArmedWithJam   == ~(s.phase = "Pad" /\ "WinchL" \in s.faults)
 WitnessRestartRelease == ~(s.phase = "Neutral" /\ s.rc /\ s.motors)
 WitnessRestartGuides  == ~(s.phase = "Guided" /\ s.faults = {"Reset"})
+WitnessBaroSpiral     == ~(s.phase = "Spiral" /\ s.faults = {"Baro"})
 =============================================================================

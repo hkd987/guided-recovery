@@ -91,7 +91,7 @@ std::string faultSet(uint16_t f) {
       {gr::kFaultGpsLost, "GpsLost"},   {gr::kFaultFence, "Fence"},           {gr::kFaultWinchLeft, "WinchL"},
       {gr::kFaultWinchRight, "WinchR"}, {gr::kFaultLopsided, "Lopsided"},     {gr::kFaultCollapse, "Collapse"},
       {gr::kFaultLowBattery, "LowBattery"}, {gr::kFaultNoHome, "NoHome"},    {gr::kFaultLowDeploy, "LowDeploy"},
-      {gr::kFaultReset, "Reset"}};
+      {gr::kFaultReset, "Reset"},           {gr::kFaultBaro, "Baro"}};
   std::string s = "{";
   bool first = true;
   for (const auto& n : names) {
@@ -367,14 +367,25 @@ int main(int argc, char** argv) {
   }
   for (int i = 0; i < flights; ++i)
     traces.push_back(flightTrace(makeScenario(seed + i, o), "flight seed " + std::to_string(seed + i)));
-  const FaultType faults[] = {FaultType::GpsLoss, FaultType::WinchStall, FaultType::Lopsided, FaultType::Gust,
-                              FaultType::Shear};
+  // Every fault, on a basic pod and with the backup kit where it changes the outcome.
+  struct FaultCase { FaultType f; bool baro2, gps2; };
+  const FaultCase faults[] = {
+      {FaultType::GpsLoss, false, false},   {FaultType::WinchStall, false, false},
+      {FaultType::Lopsided, false, false},  {FaultType::Gust, false, false},
+      {FaultType::Shear, false, false},     {FaultType::GpsLoss, false, true},
+      {FaultType::BaroStuck, false, false}, {FaultType::BaroStuck, true, false},
+      {FaultType::BaroDrift, false, false}, {FaultType::BaroDriftDrogue, false, false},
+      {FaultType::BaroDriftDrogue, true, false},
+  };
   uint64_t fs = seed + 1000000;
-  for (FaultType ft : faults) {
+  for (const auto& fc : faults) {
     ScenarioOptions fo;
-    fo.fault = ft;
+    fo.fault = fc.f;
+    fo.baro2 = fc.baro2;
+    fo.gps2 = fc.gps2;
+    const std::string label = std::string(faultName(fc.f)) + (fc.baro2 ? "+kit" : "") + (fc.gps2 ? "+gps2" : "");
     for (int i = 0; i < faultFlights; ++i, ++fs)
-      traces.push_back(flightTrace(makeScenario(fs, fo), std::string("flight ") + faultName(ft) + " seed " + std::to_string(fs)));
+      traces.push_back(flightTrace(makeScenario(fs, fo), "flight " + label + " seed " + std::to_string(fs)));
   }
   size_t steps = 0;
   for (const auto& t : traces) steps += t.steps.size() - 1;

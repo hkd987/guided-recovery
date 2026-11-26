@@ -22,6 +22,8 @@ void PhaseDetector::reset() {
   histAcc_ = 0.0f;
   belowMainT_ = -1.0f;
   belowMainExactT_ = -1.0f;
+  mainSeen_ = false;
+  gpsBandStart_ = -1.0f;
 }
 
 void PhaseDetector::pushAltitude(float agl, float dt) {
@@ -66,6 +68,8 @@ void PhaseDetector::clearFlight() {
   histAcc_ = 0.0f;
   belowMainT_ = -1.0f;
   belowMainExactT_ = -1.0f;
+  mainSeen_ = false;
+  gpsBandStart_ = -1.0f;
 }
 
 void PhaseDetector::resetStreak(float t, float d) {
@@ -131,7 +135,10 @@ void PhaseDetector::update(const DetectorInput& in, float dt) {
       } else if (in.accelG > p_.joltAccelG) {
         lastJoltT_ = in.t;
       }
-      if (in.mainFired) lastJoltT_ = in.t;
+      if (in.mainFired && p_.mainSense != 0) {
+        lastJoltT_ = in.t;
+        mainSeen_ = true;
+      }
 
       if (stage_ == FlightStage::Ascent) {
         if (in.agl > maxAgl_) maxAgl_ = in.agl;
@@ -149,6 +156,14 @@ void PhaseDetector::update(const DetectorInput& in, float dt) {
 
       if (stage_ == FlightStage::Descent) {
         if (in.baroValid) pushAltitude(in.agl, dt);
+        // GPS in-band clock: a dropout pauses it (no evidence either way);
+        // only a valid out-of-band descent resets it.
+        if (in.gpsDescentValid) {
+          const bool gpsInBand =
+              in.gpsDescent >= p_.bandLow - p_.gpsBandMargin && in.gpsDescent <= p_.bandHigh + p_.gpsBandMargin;
+          if (!gpsInBand) gpsBandStart_ = -1.0f;
+          else if (gpsBandStart_ < 0.0f) gpsBandStart_ = in.t;
+        }
         float mean = 0.0f;
         const bool haveMean = in.baroValid && meanDescent(mean);
         // Dual deploy (mainAlt set): nothing above the main altitude can be
@@ -178,7 +193,11 @@ void PhaseDetector::update(const DetectorInput& in, float dt) {
           // (a slow drogue crossing the margin above it must not count).
           float steadyNoJolt = steady;
           if (dual) steadyNoJolt = belowMainExactT_ >= 0.0f ? in.t - std::fmax(streakStart_, belowMainExactT_) : 0.0f;
-          if ((jolted && steady >= p_.confirmTime) || steadyNoJolt >= p_.confirmTimeNoJolt) {
+          const bool senseOk = p_.mainSense != 2 || mainSeen_;  // sense line required?
+          // GPS, when it has a fix, must have seen canopy-speed descent for
+          // as long as the barometer has (not just touched it on the way down).
+          const bool gpsOk = !in.gpsDescentValid || (gpsBandStart_ >= 0.0f && in.t - gpsBandStart_ >= p_.confirmTime);
+          if (senseOk && gpsOk && ((jolted && steady >= p_.confirmTime) || steadyNoJolt >= p_.confirmTimeNoJolt)) {
             stage_ = FlightStage::Canopy;
             canopyT_ = in.t;
           }
