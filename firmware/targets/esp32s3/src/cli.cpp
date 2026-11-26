@@ -18,8 +18,9 @@ bool disarmed(const Snapshot& s) { return s.status.phase == gr::Phase::Disarmed;
 
 void printStatus(const Snapshot& s) {
   const gr::Status& st = s.status;
-  Serial.printf("phase %s  mode %s  faults 0x%03X  armed %s\n", gr::phaseName(st.phase), gr::guideModeName(st.mode),
-                st.faults, s.armed ? "yes" : "no (magnet on)");
+  Serial.printf("phase %s  mode %s  faults 0x%03X  armed %s  main-fired input %s\n", gr::phaseName(st.phase),
+                gr::guideModeName(st.mode), st.faults, s.armed ? "yes" : "no (magnet on)",
+                s.mainFired ? "ON" : "off");
   Serial.printf("gps %s  sv %u  home %s (%u fixes)\n", st.gpsGood ? "fix" : "none", st.numSv,
                 st.homeValid ? "saved" : "not yet", st.homeFixes);
   if (st.homeValid) Serial.printf("home %.7f, %.7f\n", st.homeLat, st.homeLon);

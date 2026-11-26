@@ -47,7 +47,8 @@ void displayShow(const gr::Status& st, float batteryV, bool logOk, uint32_t logF
 }
 
 void displayOff() {
+  // Blank the panel only. Vext (GPIO 36) must stay low: on the V3 it also
+  // powers the LoRa front end, so cutting it would deafen the radio.
   if (on) oled.setPowerSave(1);
-  digitalWrite(board::kVext, HIGH);
   on = false;
 }

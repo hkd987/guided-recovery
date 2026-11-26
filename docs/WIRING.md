@@ -9,9 +9,11 @@ its own LoRa amplifier, PSRAM and GNSS connector, so it needs a different map.
 | I2C SDA | IMU, BMP390, ADXL375 SDA | **41** | 400 kHz, sensors in parallel, 3.3 V |
 | I2C SCL | IMU, BMP390, ADXL375 SCL | **42** | |
 | GPS → ESP32 | GPS **TX** | **38** | UART1 RX. Firmware finds the baud and configures 115200, UBX, 10 Hz |
-| ESP32 → GPS | GPS **RX** | **39** | UART1 TX |
-| Left motor | DRV8833 AIN1 / AIN2 | **47 / 48** | 20 kHz PWM |
-| Right motor | DRV8833 BIN1 / BIN2 | **5 / 6** | |
+| ESP32 → GPS | GPS **RX** | **39** | UART1 TX. The GPS UART must be 3.3 V logic |
+| GPS power | GPS VCC / GND | 5 V rail or 3.3 V | per the module listing: most FPV M10 modules (HGLRC M100 Mini included) take 5 V; put a 3.3 V-only module on the 3.3 V pin |
+| Left motor | DRV8833 AIN1 / AIN2 | **47 / 48** | 20 kHz PWM. AOUT1 / AOUT2 → left gearmotor |
+| Right motor | DRV8833 BIN1 / BIN2 | **5 / 6** | BOUT1 / BOUT2 → right gearmotor |
+| Motor power | DRV8833 VM / GND | 2S + / GND | GND shared with the Heltec. Leave SLP as the breakout ships it (pulled high = awake) |
 | Left encoder | A / B | **4 / 7** | power encoders from **3.3 V** (outputs pull up to their supply) |
 | Right encoder | A / B | **2 / 26** | GPIO 26 is free on the V3 only |
 | Arming | reed switch to GND | **34** | magnet on = switch closed = disarmed (bench mode) |
@@ -22,8 +24,23 @@ its own LoRa amplifier, PSRAM and GNSS connector, so it needs a different map.
 | OLED | — | 17 / 18 / 21, Vext 36 | built in |
 | LoRa SX1262 | — | 8–14 | built in |
 
-Spare: 19, 20 (USB D−/D+ pads), 45, 46. These are strapping pins, so don't
-put pulled-up encoder inputs on 45 or 46.
+Spare: 19, 20 (USB D−/D+ pads), 45, 46. 45 and 46 are strapping pins, so
+don't put pulled-up encoder inputs on them. Not spare even though they reach
+the header: 0 (PRG button), 1 and 37 (the board's own battery sense), 21
+(OLED reset), 43 / 44 (USB serial), 36 (Vext).
+
+Checked against the Arduino core's Heltec V3 variant and Meshtastic's V3
+definition: no pod pin clashes with the onboard LoRa radio, OLED, LED, USB
+serial or boot-mode pins. GPIO 26, 33 and 34 are free because the V3's
+ESP32-S3FN8 has no PSRAM (on PSRAM chips those pins are taken).
+
+**Vext (GPIO 36) must stay low.** It powers the OLED and the LoRa front end;
+the firmware never turns it off.
+
+**Motors stay off while the board boots.** The DRV8833 inputs have internal
+pull-downs, so while the ESP32 pins float during reset both bridges coast.
+Check it once: power the pod with the lines attached and watch that neither
+spool moves until you command it.
 
 ## Power
 
@@ -41,7 +58,9 @@ put pulled-up encoder inputs on 45 or 46.
 - **Do not plug in USB while the 2S pack is connected** unless you add a diode
   or ideal-diode on the buck output. The Heltec 5 V pin and USB VBUS may be
   tied together; this is unverified.
-- Feed sensors and encoders from the Heltec's 3.3 V pin.
+- Feed sensors and encoders from the Heltec's 3.3 V pin (the board's own
+  regulator; the pod's 3.3 V load is under about 100 mA).
+- Bring the pod up one block at a time: [BRINGUP.md](BRINGUP.md).
 
 ## Mounting
 

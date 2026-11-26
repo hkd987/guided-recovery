@@ -95,6 +95,10 @@ that falls faster than 12 m/s anyway.
 
 ## 4. Bench setup and self-test
 
+First time? Follow [BRINGUP.md](BRINGUP.md): it brings the pod up one block
+at a time (power, sensors, GPS, winches, inputs, radio) with the readings to
+expect, then the gate 4 bench test and a shock check.
+
 Put the magnet on (disarmed = bench mode), stand the pod upright, and type:
 
 ```

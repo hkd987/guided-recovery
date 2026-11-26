@@ -38,7 +38,7 @@ constexpr int kBatterySense = 3; // 2S pack through a 100k / 33k divider
 constexpr float kBatteryDivider = (100.0f + 33.0f) / 33.0f;
 
 // Onboard peripherals (fixed by the Heltec board).
-constexpr int kVext = 36;        // low = power the OLED
+constexpr int kVext = 36;        // low = power the OLED and the LoRa front end; keep low
 constexpr int kOledSda = 17;
 constexpr int kOledScl = 18;
 constexpr int kOledRst = 21;
