@@ -92,12 +92,10 @@ jobs:
 
   installer:
     name: Browser installer (GitHub Pages)
-    # Publishes https://<owner>.github.io/<repo>/ from main. Needs Pages enabled
-    # with "GitHub Actions" as the source (repo Settings -> Pages); until then
-    # this job fails without failing the workflow.
+    # Publishes https://<owner>.github.io/<repo>/ from main, only after every
+    # gate has passed. Pages source: "GitHub Actions" (repo Settings -> Pages).
     if: github.ref == 'refs/heads/main'
     needs: [software-gates, formal, firmware]
-    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       contents: read
