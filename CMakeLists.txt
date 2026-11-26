@@ -41,6 +41,9 @@ target_link_libraries(grsim PRIVATE grsimlib Threads::Threads)
 add_executable(grreplay sim/apps/grreplay.cpp)
 target_link_libraries(grreplay PRIVATE grsimlib)
 
+add_executable(grtrace sim/apps/grtrace.cpp)
+target_link_libraries(grtrace PRIVATE grsimlib)
+
 # ---- Unit tests
 enable_testing()
 add_executable(grtests

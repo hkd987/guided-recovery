@@ -17,6 +17,7 @@ this OS onto it.
 | 2 | The real flight code does it with real-world sensors | Flight core + sensor/winch models, pad to touchdown | **PASS** 94.5% within 30 m; every injected fault ends as specified |
 | 3 | Deployment detector catches the main, ignores boost/coast/drogue | Log replay | **PASS on synthetic logs** (191/191, 0 false); real logs still needed |
 | 4–8 | Hardware in the loop, ground deploys, drop tests, flights | Bench and field | Not started (needs hardware) |
+| Formal | Guardrails hold for **every** possible sensor/fault sequence | TLA+ model checked with TLC; C++ traces validated against it | **PASS** 16 properties, 35,008 states; 2,400/2,400 C++ steps conform |
 
 Firmware for the ESP32-S3 (pod and LoRa ground receiver) **compiles**. It has
 **not yet run on hardware**. See [docs/FEASIBILITY.md](docs/FEASIBILITY.md)
@@ -31,6 +32,7 @@ sim/                    simulator: rocket, wind, parafoil, winch motors, sensor 
 sim/apps/grsim.cpp      Monte Carlo runner for gates 1 and 2 (+ canopy sweep, synthetic logs)
 sim/apps/grreplay.cpp   gate 3: replays host flight-computer logs through the detector
 tests/                  unit tests
+verification/           TLA+ model of the decision logic, model checking + trace validation
 tools/report.py         HTML report from gate outputs
 logs/real/              drop real flight-log CSVs here; CI replays them
 docs/                   build guide, wiring, architecture, feasibility
@@ -59,6 +61,9 @@ Other useful commands:
 CI (`.github/workflows/ci.yml`) runs all of this on every push and fails if
 gate accuracy drops more than 2 points below `sim/baseline.json`. It also
 builds both firmware images.
+
+Formal verification of the decision logic (needs Java): `./verification/run_tla.sh`.
+See [verification/README.md](verification/README.md).
 
 ## Install the OS on a pod
 

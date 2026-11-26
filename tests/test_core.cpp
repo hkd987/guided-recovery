@@ -308,3 +308,33 @@ TEST(winch_detects_wrong_way_encoder) {
   CHECK(fault);
   CHECK(w.stalled());
 }
+
+// Found by the TLA+ model (DisarmedMeansNoLaunchPending): after a flight,
+// re-arming without a power cycle must not inherit the old launch candidate.
+// Before the fix, re-arming 12 m above the old reference jumped straight to
+// Ascent and the pod could never learn a new home point.
+TEST(detector_rearm_after_flight_starts_fresh) {
+  DetectorParams p;
+  PhaseDetector d(p);
+  d.reset();
+  float t = 0.0f, h = 0.0f;
+  const float dt = 0.005f;
+  auto step = [&](bool armed, float g, float agl, float climb) {
+    DetectorInput in = di(t, g, agl, climb);
+    in.armed = armed;
+    d.update(in, dt);
+    t += dt;
+  };
+  for (int i = 0; i < 200; ++i) step(true, 1.0f, 0.0f, 0.0f);                    // pad
+  for (int i = 0; i < 300; ++i) { h += 0.2f; step(true, 8.0f, h, 40.0f); }     // boost
+  CHECK(d.stage() == FlightStage::Ascent);
+  for (int i = 0; i < 400; ++i) { h += 0.05f; step(true, 0.3f, h, 10.0f); }    // coast
+  for (int i = 0; i < 400; ++i) { h -= 0.1f; step(true, 1.0f, h, -20.0f); }    // apogee, fast fall
+  for (int i = 0; i < 1000; ++i) step(true, 1.0f, 0.0f, 0.0f);                  // on the ground
+  CHECK(d.stage() == FlightStage::Landed);
+  for (int i = 0; i < 40; ++i) step(false, 1.0f, 0.0f, 0.0f);                   // magnet on
+  CHECK(d.stage() == FlightStage::Disarmed);
+  CHECK(!d.launchCandidate());
+  for (int i = 0; i < 400; ++i) step(true, 1.0f, 12.0f, 0.0f);                  // re-armed 12 m higher
+  CHECK(d.stage() == FlightStage::Pad);
+}

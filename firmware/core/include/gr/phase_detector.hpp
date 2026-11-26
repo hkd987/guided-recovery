@@ -35,6 +35,7 @@ class PhaseDetector {
   // True from the first sign of launch (before confirmation). The pad
   // references (home, ground pressure) freeze while this is true.
   bool launchCandidate() const { return candidate_ || stage_ >= FlightStage::Ascent; }
+  bool candidateFlag() const { return candidate_; }  // raw flag (the TLA+ model's `cand`)
   bool burnout() const { return burnout_; }
   float launchTime() const { return launchT_; }
   float apogeeTime() const { return apogeeT_; }
@@ -46,6 +47,9 @@ class PhaseDetector {
 
  private:
   void resetStreak(float t, float d);
+  // Forget everything about the last flight. Called on every disarm, so each
+  // arming starts fresh (found by the TLA+ model: DisarmedMeansNoLaunchPending).
+  void clearFlight();
 
   DetectorParams p_;
   FlightStage stage_ = FlightStage::Disarmed;

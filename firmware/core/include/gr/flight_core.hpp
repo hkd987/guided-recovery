@@ -44,6 +44,7 @@ struct Status {
   BrakeCmd brakes;
   float winchMm[2] = {0.0f, 0.0f};
   bool steeringActive = false;
+  bool candidate = false;       // launch suspected (PhaseDetector candidate flag)
   float trimNeeded = 0.0f;      // brake asymmetry the canopy needs to fly straight
   float yawRateFiltered = 0.0f;
   float launchTime = -1.0f, apogeeTime = -1.0f, canopyTime = -1.0f;

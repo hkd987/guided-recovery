@@ -152,6 +152,7 @@ void FlightCore::enterCanopy() {
   wind_.reset(p_.canopy.airspeed);
   guide_.reset();
   steer_.reset();
+  collapseT_ = lowBattT_ = 0.0f;
   if (st_.agl < p_.det.minGuidedAlt) {
     st_.faults |= kFaultLowDeploy;
     st_.phase = Phase::Neutral;
@@ -310,6 +311,7 @@ const Outputs& FlightCore::update(const Inputs& in) {
   const FlightStage before = det_.stage();
   det_.update(di, dt);
   st_.stage = det_.stage();
+  st_.candidate = det_.candidateFlag();
   st_.launchTime = det_.launchTime();
   st_.apogeeTime = det_.apogeeTime();
 

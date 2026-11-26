@@ -35,6 +35,28 @@ jobs:
           name: gate-reports
           path: reports/
 
+  formal:
+    name: TLA+ model check and trace validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Build trace recorder
+        run: |
+          sudo apt-get update && sudo apt-get install -y ninja-build
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target grtrace
+      - name: Model check, witnesses, mutations, trace validation
+        run: ./verification/run_tla.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tla-logs
+          path: build/tla/*.log
+
   firmware:
     name: Firmware build (ESP32-S3, Heltec V3)
     runs-on: ubuntu-latest

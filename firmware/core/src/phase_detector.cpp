@@ -20,6 +20,19 @@ void PhaseDetector::reset() {
   lastT_ = 0.0f;
 }
 
+void PhaseDetector::clearFlight() {
+  candidate_ = false;
+  candT_ = accelAboveT_ = baroLaunchT_ = 0.0f;
+  burnout_ = false;
+  burnoutT_ = 0.0f;
+  launchT_ = apogeeT_ = canopyT_ = -1.0f;
+  maxAgl_ = 0.0f;
+  apogeeCondT_ = 0.0f;
+  lastJoltT_ = -1e9f;
+  streakActive_ = false;
+  landedT_ = 0.0f;
+}
+
 void PhaseDetector::resetStreak(float t, float d) {
   streakActive_ = true;
   streakStart_ = t;
@@ -36,7 +49,7 @@ void PhaseDetector::update(const DetectorInput& in, float dt) {
       break;
 
     case FlightStage::Pad: {
-      if (!in.armed) { stage_ = FlightStage::Disarmed; candidate_ = false; break; }
+      if (!in.armed) { stage_ = FlightStage::Disarmed; clearFlight(); break; }
       // Accelerometer path: sustained high g, confirmed by the barometer.
       if (in.accelG > p_.launchAccelG) accelAboveT_ += dt;
       else accelAboveT_ = 0.0f;
@@ -128,7 +141,7 @@ void PhaseDetector::update(const DetectorInput& in, float dt) {
     }
 
     case FlightStage::Landed:
-      if (!in.armed) stage_ = FlightStage::Disarmed;
+      if (!in.armed) { stage_ = FlightStage::Disarmed; clearFlight(); }
       break;
   }
 }

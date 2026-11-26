@@ -5,3 +5,5 @@ logs/synthetic/
 __pycache__/
 *.pyc
 .vscode/
+*_TTrace_*
+states/
