@@ -19,6 +19,9 @@ struct LogSample {
   // (TeleMega, EasyMega: accel_x/y/z). Lets the replay feed the pod the true
   // magnitude when the airframe is not vertical, e.g. hanging under a chute.
   double lat1 = 0.0, lat2 = 0.0;
+  // False when this sample only repeats the last barometer reading (Blue
+  // Raven: 500 Hz accelerometer rows between 50 Hz barometer rows).
+  bool baroFresh = true;
   std::string state;      // host's flight state name, if logged
 };
 
@@ -30,15 +33,27 @@ struct FlightLog {
   double landT = -1.0;
   bool hasTruth = false;
   bool hasLateral = false;  // lat1/lat2 are real measurements
-  // "3-axis", "axial", or "baro-derived" (EasyMini: no accelerometer; AltosUI
-  // fills the acceleration column from the barometer, so no opening shocks).
+  // "3-axis", "axial", "baro-derived" (EasyMini: no accelerometer; AltosUI
+  // fills the acceleration column from the barometer, so no opening shocks)
+  // or "none" (Blue Raven low-rate file without its high-rate file).
   std::string accelSource;
 };
 
 // Reads a CSV with a header row. Recognised columns (case-insensitive):
 //   time | accel, acceleration | pressure (Pa or hPa) | height, altitude (m, if no pressure) | state_name, state
 // A column "main_t" or a state change to "main" gives the deployment truth.
-bool readFlightCsv(const std::string& path, FlightLog& out, std::string* err = nullptr);
+//
+// Featherweight Blue Raven: pass the low-rate file (Flight_Time_(s),
+// Baro_Press_(atm), Liftoff/Apogee/Apo_fired/Main_fired flags). Its
+// high-rate sibling (same name with LR -> HR, or low-rate -> high-rate) is
+// read from the same folder for the 3-axis accelerometer; without it the
+// replay has no opening jolts. A high-rate file passed on its own is skipped
+// and *companion is set, so a glob of both files works.
+bool readFlightCsv(const std::string& path, FlightLog& out, std::string* err = nullptr, bool* companion = nullptr);
+
+// Path of a Blue Raven low-rate file's high-rate sibling ("" if the name has
+// no LR / low-rate token).
+std::string blueRavenHighRatePath(const std::string& lowRatePath);
 bool writeFlightCsv(const std::string& path, const FlightLog& log);
 
 // Generates labelled synthetic logs with the simulator: random rockets,
@@ -69,6 +84,7 @@ struct ReplayResult {
   double deployT = -1.0;   // main event used for scoring (host's main, or apogee if that came later)
   bool slowDrogue = false; // dual deploy whose drogue already fell inside the canopy band
   double mainAlt = 0.0;    // canopy.mainAlt the pod was given for this replay
+  double descentDt = 0.0;  // median barometer interval after deployment, s (log quality)
   bool detected = false;
   double detectT = -1.0;
   double detectAgl = 0.0;  // pod's altitude estimate at confirmation
@@ -98,6 +114,9 @@ struct MainJudgement {
   MainOutcome outcome = MainOutcome::None;
   double deployT = -1.0;  // host's main event, moved to apogee if it came before it
   double settleT = -1.0;  // Canopy: when the descent had settled into the band
+  // Canopy: the last moment a confirmation can be asked for, when the log
+  // ends or the descent passes below 30 m, whichever comes first.
+  double judgeEndT = -1.0;
   bool slowDrogue = false;
 };
 MainJudgement judgeMain(const FlightLog& log, double bandLow, double bandHigh);

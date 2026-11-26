@@ -15,7 +15,7 @@ this OS onto it.
 |---|---|---|---|
 | 1 | Guidance law lands the canopy | Simple parafoil model, perfect knowledge | **PASS** 97.8% within 30 m (1,000 runs, winds to 10 mph) |
 | 2 | The real flight code does it with real-world sensors | Flight core + sensor/winch models, pad to touchdown | **PASS** 94.2% within 30 m; every injected fault ends as specified |
-| 3 | Deployment detector catches the main, ignores boost/coast/drogue | Replay of **69 real flight logs** from 12 teams (+200 synthetic) | **PASS** every canopy confirmed (43/43), none before the main; about 50 distinct flights so far, the spec asks for 100+ |
+| 3 | Deployment detector catches the main, ignores boost/coast/drogue | Replay of **123 real flight logs** from 31 public repos (+200 synthetic) | **PASS** every canopy confirmed (79/79), none before the main; about 85 distinct flights so far, the spec asks for 100+ |
 | 4 | The real board flies simulated flights with its real winches | `grhil` over USB, 200 Hz | **Harness ready.** PASS with a stand-in board (20 flights, every frame answered); needs a real board |
 | 5–8 | Ground deploys, drop tests, flights | Field | Not started (needs hardware) |
 | Formal | Guardrails hold for **every** possible sensor/fault/restart sequence | TLA+ model checked with TLC; C++ traces validated against it | **PASS** 17 properties, 78,464 states; 2,707/2,707 C++ steps conform |
@@ -37,7 +37,7 @@ tests/                  unit tests
 verification/           TLA+ model of the decision logic, model checking + trace validation
 tools/report.py         HTML report from gate outputs
 logs/real/              real flight-log CSVs (yours, plus 3 MIT-licensed); CI replays them
-logs/public/            manifest of 66 public real flight logs CI downloads for gate 3
+logs/public/            manifest of 133 public real flight-log files CI downloads for gate 3
 docs/                   build guide, wiring, architecture, feasibility
 ```
 
@@ -50,7 +50,7 @@ cmake -S . -B build -G Ninja && cmake --build build
 ./build/grsim gate2 --runs 1000 --fault-runs 100 --out reports --baseline sim/baseline.json
 ./build/grsim synth-logs --count 200 --out logs/synthetic
 ./build/grreplay --main-alt log --min-flights 100 --out reports/gate3.csv logs/synthetic/*.csv
-tools/fetch_public_logs.sh                        # 66 public real logs, pinned + checksummed
+tools/fetch_public_logs.sh                        # 133 public real log files, pinned + checksummed
 ./build/grreplay --main-alt log --min-flights 50 --out reports/gate3_real.csv logs/real/*.csv build/public-logs/*.csv
 python3 tools/report.py reports reports/index.html
 ```

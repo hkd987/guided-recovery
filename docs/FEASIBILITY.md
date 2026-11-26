@@ -4,9 +4,9 @@
 fed by realistic sensor and motor models, lands the S pod within 30 m of the
 pad in **94.2%** of 1,000 randomized flights in winds up to 10 mph. The spec's
 gate 2 pass mark is 85%. Every injected fault ends the way the spec requires.
-The deployment detector also passes on **69 real flight logs** from 12 rocketry
-teams: it confirmed every canopy and never confirmed one before the main came
-out (gate 3, below).
+The deployment detector also passes on **123 real flight logs** from 31 public
+repositories: it confirmed every canopy and never confirmed one before the
+main came out (gate 3, below).
 
 The parts are buyable today for about **$191**, and the firmware compiles for
 the Heltec V3. What simulation cannot settle is the physics. That's the job
@@ -60,29 +60,33 @@ tail on the same seeds, so it is an open item rather than a regression.
 
 ### Gate 3: log replay on real flights
 
-69 real AltOS flight logs replay through the detector on every CI run: 3 are
-stored in `logs/real/` (MIT), 66 are fetched from public GitHub repositories
-at pinned commits (`logs/public/`). They span TeleMega, TeleMetrum, EasyMega
-and EasyMini flight computers, 40 m to 8.3 km apogee, single and dual deploy,
-and include failed, late and tangled mains.
+123 real flight logs replay through the detector on every CI run. 3 are stored
+in `logs/real/` (MIT). 133 files are fetched from public GitHub repositories at
+pinned commits (`logs/public/`), and each Blue Raven low-/high-rate pair counts
+as one log. The flight computers are AltOS (TeleMega, TeleMetrum, EasyMega,
+EasyMini), Featherweight Blue Raven and Missile Works RRC3. The flights run
+40 m to 8.3 km apogee, single and dual deploy, and include failed, late and
+tangled mains. For barometer-only logs (RRC3) the pod gets barometric
+acceleration in place of its own accelerometer.
 
 Each log is first judged offline, with hindsight, from its own barometer.
 After the main came out, did the descent settle into the canopy band
 (1.5–9 m/s, median over 20 s)? If so, the pod must confirm the canopy within
 10 s of it settling (15 s for logs with no accelerometer). Mains that never
-slowed that much, flights that settled below 30 m, and descents within
-0.5 m/s of a band edge are not scored. The pod may confirm or not on those,
+slowed that much, flights that settled below 30 m, descents within 0.5 m/s of
+a band edge, and logs that end or drop below 30 m before that deadline are not
+scored. The pod may confirm or not on those,
 but never before the main, and never while falling at twice the top of the
 band.
 
 | Measure (real logs, `--main-alt log`) | Result |
 |---|---|
-| Canopies the pod had to confirm | **43/43** confirmed |
+| Canopies the pod had to confirm | **79/79** confirmed |
 | Confirmed before the main came out | **0** |
 | Confirmed while falling too fast for a canopy | **0** |
-| Not scored: fast or failed main / below 30 m / at a band edge | 16 / 3 / 3 (confirmed anyway: 1, 0, 2) |
-| Confirmation delay after the descent settled | mean 4.8 s, max 11.7 s |
-| Same, after the host fired the main | mean 9.3 s, max 17.3 s |
+| Not scored: fast or failed main / below 30 m / at a band edge / log too short | 25 / 6 / 4 / 5 (confirmed anyway: 3, -, 3, -) |
+| Confirmation delay after the descent settled | mean 4.1 s, max 11.7 s |
+| Same, after the host fired the main | mean 9.1 s, max 38.5 s |
 
 Synthetic logs (200, same simulator as gate 2): 188/188 canopies confirmed,
 0 false triggers, mean 3.0 s after settling.
@@ -94,8 +98,8 @@ were, 32 of 47 canopies were confirmed (at the scoring rules used then), with
 (items 12–15 below).
 
 **Still short of the spec.** Primary and backup computers in one rocket count
-as two logs, so the 69 logs cover about 50 distinct flights; the spec asks for
-100+. The flights also descended under round parachutes, not parafoils:
+as several logs, so the 123 logs cover about 85 distinct flights; the spec asks
+for 100+. The flights also descended under round parachutes, not parafoils:
 the logs test boost, coast, drogue, ejection shocks, pressure spikes and
 opening dynamics, but the steady descent after opening is a round chute's.
 And the host computer sits in the airframe, while the pod rides on the
@@ -108,6 +112,14 @@ drogue. With `set canopy.mainalt <your main altitude>`, nothing above that
 altitude (plus max(15 m, 10%)) counts as canopy evidence: all three pass.
 Builders flying dual deploy must set it, and should use a drogue that falls
 faster than 12 m/s.
+
+**Held out: a slow drogue the setting doesn't cover.** In RIT's 2023 KONG
+flight (two RRC3 logs) the drogue fell at about 6 m/s. The margin above the
+main altitude (max(15 m, 10%), here 46 m) takes 7.6 s to fall through at that
+speed. The 7 s no-jolt confirmation fires inside it, about 1 s before the main.
+Both logs are commented out in the manifest until the detector handles it.
+Options include dropping the no-jolt path in dual-deploy mode, or scaling its
+time with the margin and the descent rate.
 
 ## What size parafoil? (canopy sweep)
 
@@ -223,7 +235,7 @@ logs. This is the point of software-first testing.
 | Gate 4 (HIL) | Harness built and passing with a stand-in board: 20 flights, every frame answered, under 1 ms per frame on the PC. The serial path was also tested in real time over a pseudo-terminal. Needs a real board and winches on the bench |
 | Gate 5 (ground deploy) and the spec's first open question: does a parafoil open cleanly after a hard ejection? | Simulation assumes it opens in 0.8–2.5 s |
 | Gate 6 (drop tests) | The canopy model is the spec's "simple model" and needs fitting to real turn, glide and sink data. Every result above assumes canopies within about ±6% airspeed/sink and ±15% turn gain of the tested design |
-| Gate 3 on 100+ real flights | 69 real logs, about 50 distinct flights, all passing. Need about 50 more; all are round-parachute flights logged in the airframe, not by the pod |
+| Gate 3 on 100+ real flights | 123 real logs, about 85 distinct flights, all passing (2 held out, see gate 3). Need about 15 more; all are round-parachute flights logged in the airframe, not by the pod |
 | Pod-mounted IMU vs. airframe logs (spec open question) | Replay proves the logic, not the thresholds |
 | Firmware on hardware | Drivers are written from datasheets: BMI088, LSM6DSO32, BMP390, ADXL375, u-blox M10 UBX, PCNT encoders, DRV8833, SX1262. They compile but have not run. Bench-check each with `selftest` |
 | Heltec V4 | Not supported (different pin map) |

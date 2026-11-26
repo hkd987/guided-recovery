@@ -67,9 +67,204 @@ bool looksLikeHeader(const std::vector<std::string>& cols) {
   return false;
 }
 
+double field(const std::vector<std::string>& c, int i) {
+  if (i < 0 || i >= static_cast<int>(c.size()) || c[i].empty()) return NAN;
+  try { return std::stod(c[i]); } catch (...) { return NAN; }
+}
+
+// Header names after splitUnit (lower case, units stripped).
+std::vector<std::string> readHeaderNames(std::ifstream& f) {
+  std::string line;
+  if (!std::getline(f, line)) return {};
+  if (!line.empty() && line.back() == '\r') line.pop_back();
+  if (line.size() >= 3 && static_cast<unsigned char>(line[0]) == 0xEF) line.erase(0, 3);
+  auto h = splitCsv(line);
+  std::string u;
+  for (auto& x : h) splitUnit(x, x, u);
+  return h;
+}
+
+struct BrLow {
+  double t, p, axialG, latG;
+  std::string state;
+};
+
+// Blue Raven low-rate file, header already read. Its high-rate sibling, if
+// present, supplies the 3-axis accelerometer at 500 Hz.
+bool readBlueRaven(std::ifstream& f, const std::vector<std::string>& header, const std::string& path,
+                   FlightLog& out, std::string* err) {
+  const int cT = findCol(header, {"flight_time_"});
+  const int cP = findCol(header, {"baro_press_"});
+  const int cLift = findCol(header, {"liftoff"});
+  const int cApo = findCol(header, {"apogee"});
+  const int cAf = findCol(header, {"apo_fired"});
+  const int cMf = findCol(header, {"main_fired"});
+  const int cAx = findCol(header, {"axial accel"});
+  const int cLat = findCol(header, {"lateral accel"});
+  if (cT < 0 || cP < 0) { if (err) *err = "Blue Raven file without flight time or pressure"; return false; }
+
+  std::vector<BrLow> low;
+  std::string line;
+  bool lifted = false;
+  double mainT = -1.0;
+  while (std::getline(f, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (line.empty()) continue;
+    const auto c = splitCsv(line);
+    const double t = field(c, cT), atm = field(c, cP);
+    if (!std::isfinite(t) || !std::isfinite(atm) || atm <= 0.0) continue;
+    if (!low.empty() && t <= low.back().t) continue;
+    const bool lift = field(c, cLift) > 0.5, apo = field(c, cApo) > 0.5;
+    const bool af = field(c, cAf) > 0.5, mf = field(c, cMf) > 0.5;
+    // Some exports hold the flight twice: the flags drop back to zero where
+    // the second copy starts. Keep the first.
+    if (cLift >= 0 && lifted && !lift && !apo && !af && !mf) break;
+    lifted = lifted || lift;
+    BrLow r{t, atm * 101325.0, field(c, cAx), field(c, cLat), ""};
+    if (mf) {
+      r.state = "main";
+      if (mainT < 0.0) mainT = t;
+    } else if (apo || af) {
+      r.state = af ? "drogue" : "coast";
+    } else {
+      r.state = lift ? "boost" : "pad";
+    }
+    low.push_back(r);
+  }
+  if (low.size() < 10) { if (err) *err = "too few samples"; return false; }
+  out.mainT = mainT;
+  // The main channel's flag is the only deployment truth: a unit whose main
+  // never fired (backup computer, or the main fired by another one) says
+  // nothing about when the canopy came out.
+  out.hasTruth = mainT >= 0.0;
+  if (!out.hasTruth && err) *err = "Blue Raven main channel never fired: no deployment truth";
+
+  // High-rate sibling: 3-axis specific force in g.
+  std::vector<std::array<double, 4>> high;  // t, x, y, z
+  const std::string hrPath = blueRavenHighRatePath(path);
+  if (!hrPath.empty()) {
+    std::ifstream hf(hrPath);
+    if (hf) {
+      const auto hh = readHeaderNames(hf);
+      const int hT = findCol(hh, {"flight_time_"});
+      const int hX = findCol(hh, {"accel_x"}), hY = findCol(hh, {"accel_y"}), hZ = findCol(hh, {"accel_z"});
+      if (hT >= 0 && hX >= 0 && hY >= 0 && hZ >= 0) {
+        while (std::getline(hf, line)) {
+          if (!line.empty() && line.back() == '\r') line.pop_back();
+          const auto c = splitCsv(line);
+          const double t = field(c, hT);
+          if (!std::isfinite(t) || t < low.front().t) continue;
+          if (t > low.back().t) break;
+          if (!high.empty() && t <= high.back()[0]) continue;
+          const double x = field(c, hX), y = field(c, hY), z = field(c, hZ);
+          if (std::isfinite(x) && std::isfinite(y) && std::isfinite(z)) high.push_back({t, x, y, z});
+        }
+      }
+    }
+  }
+
+  out.samples.clear();
+  if (high.size() >= 100) {
+    // The airframe axis carries gravity on the pad (before t = 0, liftoff).
+    double sum[3] = {0, 0, 0};
+    int n = 0;
+    for (const auto& r : high) {
+      if (r[0] >= 0.0 || n >= 500) break;
+      for (int k = 0; k < 3; ++k) sum[k] += r[static_cast<size_t>(k + 1)];
+      ++n;
+    }
+    if (n < 10)
+      for (size_t i = 0; i < 50 && i < high.size(); ++i, ++n)
+        for (int k = 0; k < 3; ++k) sum[k] += high[i][static_cast<size_t>(k + 1)];
+    int ax = 0;
+    for (int k = 1; k < 3; ++k)
+      if (std::fabs(sum[k]) > std::fabs(sum[ax])) ax = k;
+    const double sign = sum[ax] < 0.0 ? -1.0 : 1.0;
+    const int l1 = (ax + 1) % 3, l2 = (ax + 2) % 3;
+    size_t j = 0;
+    auto lowSample = [&](const BrLow& r, bool fresh) {
+      LogSample s;
+      s.t = r.t;
+      s.pressure = r.p;
+      s.state = r.state;
+      s.baroFresh = fresh;
+      return s;
+    };
+    // Barometer rows before the accelerometer starts.
+    while (j < low.size() && low[j].t < high.front()[0]) out.samples.push_back(lowSample(low[j++], true));
+    size_t lastJ = static_cast<size_t>(-1);
+    for (const auto& r : high) {
+      while (j + 1 < low.size() && low[j + 1].t <= r[0]) ++j;
+      LogSample s = lowSample(low[j], j != lastJ);
+      lastJ = j;
+      s.t = r[0];
+      s.accel = (sign * r[static_cast<size_t>(ax + 1)] - 1.0) * kG;  // gravity removed, 0 on the pad
+      s.lat1 = r[static_cast<size_t>(l1 + 1)] * kG;
+      s.lat2 = r[static_cast<size_t>(l2 + 1)] * kG;
+      out.samples.push_back(s);
+    }
+    // Barometer rows after the accelerometer log ended (it stops sooner).
+    for (++j; j < low.size(); ++j) out.samples.push_back(lowSample(low[j], true));
+    out.hasLateral = true;
+    out.accelSource = "3-axis";
+  } else {
+    // No high-rate file: the low-rate file's own axial accelerometer column,
+    // if it has one, else nothing (no opening jolts reach the pod).
+    double pad = 0.0;
+    int n = 0;
+    for (const auto& r : low)
+      if (r.t < 0.0 && std::isfinite(r.axialG)) { pad += r.axialG; ++n; }
+    pad = n > 0 ? pad / n : 1.0;
+    bool any = false;
+    for (const auto& r : low) {
+      LogSample s;
+      s.t = r.t;
+      s.pressure = r.p;
+      s.state = r.state;
+      if (std::isfinite(r.axialG)) { s.accel = (r.axialG - pad) * kG; any = true; }
+      if (std::isfinite(r.latG)) s.lat1 = r.latG * kG;
+      out.samples.push_back(s);
+    }
+    out.accelSource = any ? "axial" : "none";
+  }
+  return true;
+}
+
 }  // namespace
 
-bool readFlightCsv(const std::string& path, FlightLog& out, std::string* err) {
+std::string blueRavenHighRatePath(const std::string& lowRatePath) {
+  const size_t slash = lowRatePath.find_last_of('/');
+  const size_t base = slash == std::string::npos ? 0 : slash + 1;
+  std::string p = lowRatePath;
+  std::string lower = p;
+  for (auto& ch : lower) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  // "low-rate", "low_rate", "lowrate" -> "high..." (keeping the separator and case).
+  for (const char* sep : {"-", "_", ""}) {
+    const std::string key = std::string("low") + sep + "rate";
+    const size_t at = lower.rfind(key);
+    if (at != std::string::npos && at >= base) {
+      const bool upper = std::isupper(static_cast<unsigned char>(p[at])) != 0;
+      return p.replace(at, 3, upper ? "High" : "high");
+    }
+  }
+  // The last "LR" (any case) standing alone in the file name: "X_LR.csv",
+  // "X LR_date.csv", "featherweight_lr.csv".
+  auto alnum = [](char ch) { return std::isalnum(static_cast<unsigned char>(ch)) != 0; };
+  for (size_t i = p.size(); i-- > base;) {
+    if (i + 1 >= p.size() || lower[i] != 'l' || lower[i + 1] != 'r') continue;
+    const bool leftOk = i == base || !alnum(p[i - 1]);
+    const bool rightOk = i + 2 >= p.size() || !alnum(p[i + 2]);
+    if (leftOk && rightOk) {
+      p[i] = p[i] == 'l' ? 'h' : 'H';
+      p[i + 1] = p[i + 1] == 'r' ? 'r' : 'R';
+      return p;
+    }
+  }
+  return "";
+}
+
+bool readFlightCsv(const std::string& path, FlightLog& out, std::string* err, bool* companion) {
+  if (companion) *companion = false;
   std::ifstream f(path);
   if (!f) { if (err) *err = "cannot open"; return false; }
   out = FlightLog{};
@@ -92,12 +287,28 @@ bool readFlightCsv(const std::string& path, FlightLog& out, std::string* err) {
   }
   units.resize(header.size());
   for (size_t i = 0; i < header.size(); ++i) splitUnit(header[i], header[i], units[i]);
+  // Featherweight Blue Raven: "Flight_Time_(s)" plus either the barometer
+  // (low-rate file) or the 3-axis accelerometer alone (high-rate file).
+  if (findCol(header, {"flight_time_"}) >= 0) {
+    if (findCol(header, {"baro_press_"}) >= 0) return readBlueRaven(f, header, path, out, err);
+    if (findCol(header, {"accel_x"}) >= 0) {
+      if (companion) *companion = true;
+      if (err) *err = "Blue Raven high-rate file: replayed with its low-rate file";
+      return false;
+    }
+  }
   const int cT = findCol(header, {"time", "t", "time_s"});
   const int cA = findCol(header, {"acceleration", "accel", "accel_ms2"});
   const int cP = findCol(header, {"pressure", "pressure_pa"});
-  const int cH = findCol(header, {"height", "altitude", "height_m"});
+  // Eggtimer (Quantum, Quasar, TRS): "T,Alt,Veloc,FAlt,FVeloc,...,Drogue,Main",
+  // Alt in feet above the pad, Drogue/Main nonzero once that channel fired.
+  const bool eggtimer = findCol(header, {"falt"}) >= 0 && findCol(header, {"fveloc"}) >= 0;
+  const int cH = eggtimer ? findCol(header, {"alt"}) : findCol(header, {"height", "altitude", "height_m"});
+  const int cMainFlag = eggtimer ? findCol(header, {"main"}) : -1;
+  const int cDrogueFlag = eggtimer ? findCol(header, {"drogue"}) : -1;
   const int cS = findCol(header, {"state_name", "state"});
   const int cM = findCol(header, {"main_t"});
+  const int cE = findCol(header, {"events", "event"});  // Missile Works RRC3: "Drogue", "Main"
   const int cX = findCol(header, {"accel_x"});
   const int cY = findCol(header, {"accel_y"});
   const int cZ = findCol(header, {"accel_z"});
@@ -107,7 +318,10 @@ bool readFlightCsv(const std::string& path, FlightLog& out, std::string* err) {
   const bool altos = findCol(header, {"version"}) >= 0 && findCol(header, {"serial"}) >= 0;
   const bool hasCall = findCol(header, {"call"}) >= 0;
   std::vector<std::array<double, 3>> imu;  // raw 3-axis specific force, m/s^2
-  if (cT < 0 || cA < 0 || (cP < 0 && cH < 0)) {
+  // Barometer-only altimeters (RRC3 and the like) have no acceleration
+  // column: accepted when they log pressure and deployment events.
+  const bool baroOnly = cA < 0 && ((cP >= 0 && cE >= 0) || (eggtimer && cH >= 0 && cMainFlag >= 0));
+  if (cT < 0 || (cA < 0 && !baroOnly) || (cP < 0 && cH < 0)) {
     if (err) *err = "missing time/acceleration/pressure-or-height columns";
     return false;
   }
@@ -122,8 +336,9 @@ bool readFlightCsv(const std::string& path, FlightLog& out, std::string* err) {
   else if (uP == "kpa") kP = 1000.0;
   else if (uP == "atm") kP = 101325.0;
   else if (uP == "psi") kP = 6894.757;
-  if (uH == "ft" || uH == "feet") kH = 0.3048;
+  if (uH == "ft" || uH == "feet" || eggtimer) kH = 0.3048;
   std::string prevState;
+  std::string eventState = "ascent";
   while (std::getline(f, line)) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
     if (line.empty() || line[0] == '#') continue;
@@ -134,7 +349,7 @@ bool readFlightCsv(const std::string& path, FlightLog& out, std::string* err) {
     };
     LogSample s;
     s.t = get(cT);
-    s.accel = get(cA) * kA;
+    s.accel = baroOnly ? 0.0 : get(cA) * kA;
     const double p = cP >= 0 ? get(cP) : NAN;
     if (std::isfinite(p) && p > 0.0) {
       s.pressure = kP > 0.0 ? p * kP : (p < 2000.0 ? p * 100.0 : p);
@@ -146,6 +361,18 @@ bool readFlightCsv(const std::string& path, FlightLog& out, std::string* err) {
     }
     if (!std::isfinite(s.t) || !std::isfinite(s.accel) || !std::isfinite(s.pressure)) continue;
     if (cS >= 0 && cS < static_cast<int>(c.size())) s.state = lower(c[cS]);
+    if (eggtimer && cMainFlag >= 0) {
+      if (get(cMainFlag) > 0.0) eventState = "main";
+      else if (eventState != "main" && get(cDrogueFlag) > 0.0) eventState = "drogue";
+      s.state = eventState;
+    }
+    if (cS < 0 && cE >= 0 && cE < static_cast<int>(c.size())) {
+      const std::string ev = lower(c[cE]);
+      if (ev.find("main") != std::string::npos) eventState = "main";
+      else if (eventState != "main" && (ev.find("drogue") != std::string::npos || ev.find("apogee") != std::string::npos))
+        eventState = "drogue";
+      s.state = eventState;
+    }
     if (cM >= 0 && !out.hasTruth) {
       const double m = get(cM);
       if (std::isfinite(m)) { out.mainT = m; out.hasTruth = true; }
@@ -158,9 +385,29 @@ bool readFlightCsv(const std::string& path, FlightLog& out, std::string* err) {
     out.samples.push_back(s);
     if (imu3) imu.push_back({get(cX), get(cY), get(cZ)});
   }
-  if (cS >= 0 && cM < 0) out.hasTruth = true;  // states logged: no "main" state means no main
+  // States or events logged: no "main" means no main.
+  if ((cS >= 0 || cE >= 0 || cMainFlag >= 0) && cM < 0) out.hasTruth = true;
   if (out.samples.size() < 10) { if (err) *err = "too few samples"; return false; }
-  out.accelSource = (altos && !hasCall && !imu3) ? "baro-derived" : "axial";
+  out.accelSource = baroOnly ? "baro-derived" : (altos && !hasCall && !imu3) ? "baro-derived" : "axial";
+  if (baroOnly) {
+    // The pod has its own accelerometer; the nearest stand-in from a
+    // barometer-only log is the barometric acceleration (what AltosUI writes
+    // for EasyMini): enough for the boost, no opening jolts. Without it the
+    // pod would only see the launch at 30 m and its ground reference would
+    // drift up with the climb.
+    auto& v = out.samples;
+    const size_t n = v.size();
+    std::vector<double> h(n), vel(n, 0.0);
+    for (size_t i = 0; i < n; ++i) h[i] = 44330.0 * (1.0 - std::pow(v[i].pressure / 101325.0, 0.190263));
+    auto slope = [&](const std::vector<double>& y, size_t i) {
+      size_t a = i, b = i;
+      while (a > 0 && v[i].t - v[a - 1].t <= 0.25) --a;
+      while (b + 1 < n && v[b + 1].t - v[i].t <= 0.25) ++b;
+      return b > a && v[b].t > v[a].t ? (y[b] - y[a]) / (v[b].t - v[a].t) : 0.0;
+    };
+    for (size_t i = 0; i < n; ++i) vel[i] = slope(h, i);
+    for (size_t i = 0; i < n; ++i) v[i].accel = slope(vel, i);
+  }
   if (imu3) {
     // The airframe axis is the IMU axis carrying gravity before launch; the
     // other two are cross-axis. The axial value itself keeps coming from the
@@ -344,6 +591,9 @@ MainJudgement judgeMain(const FlightLog& log, double bandLow, double bandHigh) {
     }
     J.outcome = MainOutcome::Canopy;
     J.settleT = t + kWin;  // the window had to fill
+    J.judgeEndT = tEnd;
+    for (size_t i = 0; i < s.size(); ++i)
+      if (s[i].t >= J.settleT && h[i] < kMinAlt) { J.judgeEndT = std::min(tEnd, s[i].t); break; }
     return J;
   }
   if (sawLowCanopy || h[iApo] < kMinAlt + 10.0) { J.outcome = MainOutcome::TooLow; return J; }
@@ -364,6 +614,19 @@ ReplayResult replayLog(const FlightLog& log, const gr::Params& params0, const Re
   res.settleT = J.settleT;
   res.deployT = J.deployT;
   res.slowDrogue = J.slowDrogue;
+  {
+    std::vector<double> dts;
+    double last = -1.0;
+    for (const auto& x : log.samples) {
+      if (!x.baroFresh || x.t < J.deployT || J.deployT < 0.0) continue;
+      if (last >= 0.0) dts.push_back(x.t - last);
+      last = x.t;
+    }
+    if (!dts.empty()) {
+      std::nth_element(dts.begin(), dts.begin() + static_cast<long>(dts.size() / 2), dts.end());
+      res.descentDt = dts[dts.size() / 2];
+    }
+  }
 
   std::vector<LogSample> s = log.samples;
   std::vector<double> h(s.size());
@@ -399,6 +662,8 @@ ReplayResult replayLog(const FlightLog& log, const gr::Params& params0, const Re
   {
     LogSample pad = s.front();
     pad.accel = 0.0;
+    pad.lat1 = pad.lat2 = 0.0;
+    pad.baroFresh = true;
     pad.state = "pad";
     std::vector<LogSample> pre;
     const double tFirst = s.front().t;
@@ -412,23 +677,33 @@ ReplayResult replayLog(const FlightLog& log, const gr::Params& params0, const Re
   const double t0 = s.front().t;
   const double t1 = s.back().t;
   size_t idx = 0;
-  size_t lastIdx = static_cast<size_t>(-1);
+  bool started = false;
+  double lastP = s.front().pressure;
   gr::Inputs in;
   if (opt.trace)
     std::fprintf(opt.trace, "t,host_state,log_h,stage,agl,climb,descent_mean,steady_s,accel_g,last_jolt\n");
   int traceDiv = 0;
   for (double tt = t0; tt <= t1; tt += 0.005) {
-    while (idx + 1 < s.size() && s[idx + 1].t <= tt) ++idx;
+    // Every barometer reading passed since the last step counts once, even
+    // when accelerometer rows (Blue Raven, 500 Hz) outnumber the steps.
+    bool fresh = !started;
+    started = true;
+    while (idx + 1 < s.size() && s[idx + 1].t <= tt) {
+      ++idx;
+      if (s[idx].baroFresh) {
+        fresh = true;
+        lastP = s[idx].pressure;
+      }
+    }
     in = gr::Inputs{};
     in.tUs = static_cast<uint64_t>(std::llround((tt - t0 + 1.0) * 1e6));
     const double f = s[idx].accel + kG;  // back to specific force along the axis
     // Body frame: z down the airframe axis (the pod's "down" when hanging).
     in.imu.accel = gr::Vec3{static_cast<float>(s[idx].lat1), static_cast<float>(s[idx].lat2), static_cast<float>(-f)};
     in.imu.valid = true;
-    if (idx != lastIdx) {
+    if (fresh) {
       in.baroFresh = true;
-      in.pressurePa = static_cast<float>(s[idx].pressure);
-      lastIdx = idx;
+      in.pressurePa = static_cast<float>(lastP);
     }
     in.armed = true;
     in.batteryV = 8.0f;
@@ -458,8 +733,17 @@ ReplayResult replayLog(const FlightLog& log, const gr::Params& params0, const Re
     if (res.detectDescent > 2.0 * params0.det.bandHigh) res.implausible = true;
   }
   if (res.outcome == MainOutcome::Canopy && !res.falseTrigger) {
-    const double w = log.accelSource == "baro-derived" ? opt.windowNoAccel : opt.window;
-    if (!res.detected || res.detectT > res.settleT + w) res.missed = true;
+    const bool noAccel = log.accelSource == "baro-derived" || log.accelSource == "none";
+    const double w = noAccel ? opt.windowNoAccel : opt.window;
+    const bool late = !res.detected || res.detectT > res.settleT + w;
+    if (late && J.judgeEndT < res.settleT + w) {
+      // The log ends, or the canopy is below 30 m, before the deadline: no
+      // fair verdict either way.
+      res.outcome = J.judgeEndT < (log.landT >= 0.0 ? log.landT : log.samples.back().t) ? MainOutcome::TooLow
+                                                                                         : MainOutcome::Truncated;
+    } else if (late) {
+      res.missed = true;
+    }
   }
   return res;
 }
