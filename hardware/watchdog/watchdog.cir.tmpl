@@ -1,0 +1,64 @@
+* Guided Recovery Pod: motor-driver watchdog
+*
+* The flight task toggles PET (Heltec GPIO 20) every control cycle while the
+* motors may run. Each rising edge pumps charge through C1/D2 into the hold
+* capacitor C2. While C2 holds more than about 1.2 V, Q1 conducts, Q1 turns
+* Q2 on, and Q2 pulls the DRV8833's SLP (nSLEEP) pin up to 3.3 V: driver
+* awake. When the edges stop (pin stuck high, stuck low or floating), C2
+* drains through R1/R2, Q1 and Q2 turn off, and R5 pulls SLP low: driver
+* asleep, both motors coast. Q3 holds C2 at zero for 50-90 ms after the
+* 3.3 V rail comes up, so the rail ramp itself (the pin floats up with the
+* rail during boot) cannot wake the driver.
+*
+* $label
+
+.include $models
+.param BFSCALE=$bf ISSCALE=$isscale
+
+* 3.3 V rail from the Heltec, ramping up at power-on
+Vcc vcc 0 PWL(0 0 $tramp $vcc)
+
+* The GPIO: an ideal source behind a switch (closed = driving, open = high-Z)
+Vsrc petsrc 0 PWL($srcpwl)
+Vctl ctl 0 PWL($ctlpwl)
+S1 petsrc pet ctl 0 SWPET
+Rpull pet $pullnode $rpull
+
+* Charge pump. RA drains C1 when the pin stops toggling high, so a pin stuck
+* high trips as fast as one stuck low (D2 keeps it from draining C2).
+C1 pet a $c1
+D1 0 a DBAT85
+D2 a b DBAT85
+RA a 0 $ra
+C2 b 0 $c2
+
+* Switch: Q1 (NPN) turns Q2 (PNP high side) on
+R1 b nb $r1
+R2 nb 0 $r2
+Q1 n1c nb 0 Q2N3904
+R3 n1c nb2 $r3
+R4 vcc nb2 $r4
+Q2 slp nb2 vcc Q2N3906
+R5 slp 0 $r5
+
+* DRV8833 nSLEEP input: 500 kohm internal pulldown, a few pF
+Rpd slp 0 500k
+Cin slp 0 10p
+
+* Power-on clamp
+C3 vcc p $c3
+R6 p 0 $r6
+R7 p np $r7
+Q3 b np 0 Q2N3904
+
+.temp $temp
+.options reltol=1e-3 abstol=1e-12 vntol=1e-6 method=gear
+.tran $tstep $tstop 0 $tmax
+.control
+set wr_singlescale
+set wr_vecnames
+run
+wrdata $out v(slp) v(b) v(pet)
+quit
+.endc
+.end
