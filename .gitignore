@@ -1,0 +1,7 @@
+build/
+.pio/
+reports/
+logs/synthetic/
+__pycache__/
+*.pyc
+.vscode/

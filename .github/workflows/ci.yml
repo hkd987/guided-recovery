@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  software-gates:
+    name: Gates 1-3 (simulation and log replay)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build simulator, replay tool and tests
+        run: |
+          sudo apt-get update && sudo apt-get install -y ninja-build
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+      - name: Unit tests
+        run: ./build/grtests
+      - name: Gate 1 - guidance in a simple model
+        run: ./build/grsim gate1 --runs 1000 --out reports
+      - name: Gate 2 - software in the loop, with faults and accuracy regression check
+        run: ./build/grsim gate2 --runs 1000 --fault-runs 100 --out reports --baseline sim/baseline.json
+      - name: Gate 3 - deployment detector on flight logs
+        run: |
+          ./build/grsim synth-logs --count 200 --out logs/synthetic
+          shopt -s nullglob
+          ./build/grreplay --min-flights 100 --out reports/gate3.csv logs/synthetic/*.csv logs/real/*.csv
+      - name: Report
+        if: always()
+        run: python3 tools/report.py reports reports/index.html || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gate-reports
+          path: reports/
+
+  firmware:
+    name: Firmware build (ESP32-S3, Heltec V3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('firmware/targets/esp32s3/platformio.ini') }}
+      - name: Build pod and ground receiver
+        run: |
+          pip install platformio
+          cd firmware/targets/esp32s3
+          pio run -e pod -e ground
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: |
+            firmware/targets/esp32s3/.pio/build/pod/firmware.bin
+            firmware/targets/esp32s3/.pio/build/pod/bootloader.bin
+            firmware/targets/esp32s3/.pio/build/pod/partitions.bin
+            firmware/targets/esp32s3/.pio/build/ground/firmware.bin

@@ -1,0 +1,4 @@
+{
+  "note": "Gate 2 SITL accuracy on seed 1 (1000 nominal runs). CI fails if a change drops within_pct by more than 2 points. Update deliberately when the model or guidance changes.",
+  "within_pct": 94.5
+}
