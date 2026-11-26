@@ -28,6 +28,8 @@ void encodersBegin();
 // Accumulated counts since boot (or since encodersZero).
 void encodersRead(int32_t& left, int32_t& right);
 void encodersZero();
+// After a restart in flight: continue counting from the saved positions.
+void encodersRestore(int32_t left, int32_t right);
 
 // ---- Switches, battery, buzzer, LED
 void ioBegin();

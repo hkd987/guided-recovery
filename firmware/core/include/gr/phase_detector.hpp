@@ -29,6 +29,9 @@ class PhaseDetector {
  public:
   explicit PhaseDetector(const DetectorParams& p) : p_(p) {}
   void reset();
+  // After a processor restart in flight: continue from `stage` (Ascent,
+  // Descent or Canopy) with no launch candidate and burnout assumed.
+  void resumeAt(FlightStage stage);
   void update(const DetectorInput& in, float dt);
 
   FlightStage stage() const { return stage_; }

@@ -15,7 +15,9 @@
 //
 //   grtrace --out Traces.tla [--flights N] [--fault-flights K] [--seed S]
 
+#include <algorithm>
 #include <cmath>
+#include <memory>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -50,6 +52,7 @@ struct Obs {
 struct Step {
   Obs o;
   bool armed;
+  bool resume = false;  // a processor restart + FlightCore::resume(), not an update
 };
 
 struct Trace {
@@ -87,7 +90,8 @@ std::string faultSet(uint16_t f) {
   static const std::pair<uint16_t, const char*> names[] = {
       {gr::kFaultGpsLost, "GpsLost"},   {gr::kFaultFence, "Fence"},           {gr::kFaultWinchLeft, "WinchL"},
       {gr::kFaultWinchRight, "WinchR"}, {gr::kFaultLopsided, "Lopsided"},     {gr::kFaultCollapse, "Collapse"},
-      {gr::kFaultLowBattery, "LowBattery"}, {gr::kFaultNoHome, "NoHome"},    {gr::kFaultLowDeploy, "LowDeploy"}};
+      {gr::kFaultLowBattery, "LowBattery"}, {gr::kFaultNoHome, "NoHome"},    {gr::kFaultLowDeploy, "LowDeploy"},
+      {gr::kFaultReset, "Reset"}};
   std::string s = "{";
   bool first = true;
   for (const auto& n : names) {
@@ -145,6 +149,22 @@ class Recorder {
     lastWasHomeOnly_ = homeOnly;
   }
 
+  // Right after a restart and FlightCore::resume(): no update has run yet.
+  void resumed(const gr::FlightCore& core) {
+    const gr::Status& st = core.status();
+    Obs o;
+    o.stage = st.stage;
+    o.phase = st.phase;
+    o.cand = st.candidate;
+    o.home = st.homeValid ? home_ : 0;
+    o.bench = core.benchActive();
+    o.motors = false;
+    o.steer = false;
+    o.faults = st.faults;
+    tr_.steps.push_back(Step{o, false, true});
+    lastWasHomeOnly_ = false;
+  }
+
   Trace take() { return tr_; }
 
  private:
@@ -160,11 +180,15 @@ class Recorder {
 
 // ---------------------------------------------------------------- flights
 
-Trace flightTrace(const Scenario& s, const std::string& name) {
+enum class ResetAt { None, Descent, Canopy };
+
+Trace flightTrace(const Scenario& s, const std::string& name, ResetAt resetAt = ResetAt::None) {
   World w(s);
   SensorSuite sens(s);
-  gr::FlightCore core;
+  auto corePtr = std::make_unique<gr::FlightCore>();
   Recorder rec(name);
+  bool didReset = false;
+  double descentSeen = -1.0;
   double duty[2] = {0.0, 0.0};
   gr::Inputs in;
   double landedAt = -1.0;
@@ -178,6 +202,19 @@ Trace flightTrace(const Scenario& s, const std::string& name) {
     const double since = landedAt < 0.0 ? -1.0 : w.t() - landedAt;
     if (since >= 25.0 && since < 27.0) in.armed = false;
     if (since >= 27.0 && in.baroFresh) in.pressurePa -= 140.0f;
+    // Optional processor restart: snapshot, new core, resume.
+    if (descentSeen < 0.0 && corePtr->status().stage == gr::FlightStage::Descent) descentSeen = w.t();
+    const bool fire = !didReset && ((resetAt == ResetAt::Descent && descentSeen >= 0.0 && w.t() > descentSeen + 1.0 &&
+                                     corePtr->status().stage == gr::FlightStage::Descent) ||
+                                    (resetAt == ResetAt::Canopy && w.openT() >= 0.0 && w.t() > w.openT() + 10.0 &&
+                                     corePtr->status().stage == gr::FlightStage::Canopy));
+    if (fire) {
+      const gr::ResumeState snap = corePtr->resumeState(in.encoder);
+      corePtr = std::make_unique<gr::FlightCore>();
+      if (corePtr->resume(snap)) rec.resumed(*corePtr);
+      didReset = true;
+    }
+    gr::FlightCore& core = *corePtr;
     const gr::Outputs& out = core.update(in);
     duty[0] = out.motorDuty[0];
     duty[1] = out.motorDuty[1];
@@ -295,10 +332,10 @@ void writeTla(const std::string& path, const std::vector<Trace>& traces) {
       const Obs& o = st.o;
       std::fprintf(f,
                    "%s[o |-> [stage |-> \"%s\", phase |-> \"%s\", cand |-> %s, home |-> %d, bench |-> %s, "
-                   "motors |-> %s, steer |-> %s, faults |-> %s], armed |-> %s]",
+                   "motors |-> %s, steer |-> %s, faults |-> %s], armed |-> %s, resume |-> %s]",
                    j ? ",\n    " : "", stageName(o.stage), phaseNameTla(o.phase), o.cand ? "TRUE" : "FALSE", o.home,
                    o.bench ? "TRUE" : "FALSE", o.motors ? "TRUE" : "FALSE", o.steer ? "TRUE" : "FALSE",
-                   faultSet(o.faults).c_str(), st.armed ? "TRUE" : "FALSE");
+                   faultSet(o.faults).c_str(), st.armed ? "TRUE" : "FALSE", st.resume ? "TRUE" : "FALSE");
     }
     std::fprintf(f, ">>%s\n", k + 1 < traces.size() ? "," : "");
   }
@@ -322,6 +359,12 @@ int main(int argc, char** argv) {
   traces.push_back(benchSession1());
   traces.push_back(benchSession2());
   ScenarioOptions o;
+  ScenarioOptions dual;
+  dual.dualDeployOnly = true;
+  for (int i = 0; i < std::max(2, flights / 8); ++i) {
+    traces.push_back(flightTrace(makeScenario(seed + 5000 + i, dual), "restart in descent, seed " + std::to_string(seed + 5000 + i), ResetAt::Descent));
+    traces.push_back(flightTrace(makeScenario(seed + 6000 + i, o), "restart under canopy, seed " + std::to_string(seed + 6000 + i), ResetAt::Canopy));
+  }
   for (int i = 0; i < flights; ++i)
     traces.push_back(flightTrace(makeScenario(seed + i, o), "flight seed " + std::to_string(seed + i)));
   const FaultType faults[] = {FaultType::GpsLoss, FaultType::WinchStall, FaultType::Lopsided, FaultType::Gust,

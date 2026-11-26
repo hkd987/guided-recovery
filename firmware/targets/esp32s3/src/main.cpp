@@ -5,6 +5,8 @@
 // Arduino loop(): the USB serial console (see cli.cpp).
 
 #include <Arduino.h>
+#include <esp_attr.h>
+#include <esp_system.h>
 #include <esp_timer.h>
 
 #include "app.h"
@@ -17,9 +19,14 @@
 #include "radio.h"
 #include "sensors.h"
 
+// Flight snapshot in RTC memory: survives brownout, watchdog and panic
+// resets (not power-off). Written every cycle; read once at boot.
+RTC_NOINIT_ATTR gr::ResumeState rtcSnapshot;
+
 namespace {
 
 gr::FlightCore* core = nullptr;
+bool resumedFlight = false;
 SemaphoreHandle_t snapMutex = nullptr;
 Snapshot snap;
 
@@ -59,6 +66,7 @@ void flightTask(void*) {
     }
     gpsPoll(in.gps);
     encodersRead(in.encoder[0], in.encoder[1]);
+    const int32_t rawEnc[2] = {in.encoder[0], in.encoder[1]};
     in.encoder[0] *= g_settings.encSignL;
     in.encoder[1] *= g_settings.encSignR;
     in.armed = armSwitchArmed();
@@ -82,6 +90,7 @@ void flightTask(void*) {
 
     const gr::Outputs& out = core->update(in);
     motorsWrite(out.motorDuty[0], out.motorDuty[1], out.motorsEnabled);
+    rtcSnapshot = core->resumeState(rawEnc);
     buzzer(out.buzzer);
     led(out.led);
 
@@ -179,9 +188,30 @@ void appReconfigure() {
   portEXIT_CRITICAL(&reqMux);
 }
 
+bool warmRestart() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_BROWNOUT:
+    case ESP_RST_PANIC:
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT:
+    case ESP_RST_SW:
+      return true;
+    default:
+      return false;  // power-on: RTC memory holds garbage
+  }
+}
+
 void appStart() {
   snapMutex = xSemaphoreCreateMutex();
   core = new gr::FlightCore(settingsToParams());
+  // A restart in flight resumes from the snapshot: Ascent/Descent carry on
+  // with the saved home point; under a canopy both brakes are released.
+  if (warmRestart() && core->resume(rtcSnapshot)) {
+    encodersRestore(rtcSnapshot.encoder[0], rtcSnapshot.encoder[1]);
+    resumedFlight = true;
+  }
+  rtcSnapshot.magic = 0;
   xTaskCreatePinnedToCore(flightTask, "flight", 8192, nullptr, configMAX_PRIORITIES - 2, nullptr, 1);
   xTaskCreatePinnedToCore(loggerTask, "logger", 4096, nullptr, 5, nullptr, 0);
   xTaskCreatePinnedToCore(radioTask, "radio", 4096, nullptr, 4, nullptr, 0);
@@ -202,11 +232,16 @@ void setup() {
   Serial.printf("IMU %s, baro %s, high-g %s\n",
                 g_sensors.imu == ImuType::Bmi088 ? "BMI088" : g_sensors.imu == ImuType::Lsm6dso32 ? "LSM6DSO32" : "MISSING",
                 g_sensors.baro ? "BMP390" : "MISSING", g_sensors.highG ? "ADXL375" : "none");
+  // After an in-flight restart, get going quickly: the receiver is still
+  // configured, so the first baud rate tried answers at once.
+  const bool maybeInFlight = warmRestart() && rtcSnapshot.magic == gr::kResumeMagic;
   Serial.print("GPS: configuring... ");
-  Serial.println(gpsBegin() ? "ok" : "no response (check wiring)");
+  Serial.println(gpsBegin(maybeInFlight ? 1500 : 4000) ? "ok" : "no response (check wiring)");
   Serial.printf("Log: %s\n", flashLogBegin() ? "ok" : "partition missing");
   Serial.printf("Radio: %s\n", radioBegin(g_settings.radioMHz, g_settings.radioDbm) ? "ok" : "failed");
   appStart();
+  if (resumedFlight) Serial.printf("RESUMED FLIGHT after restart (reason %d): %s\n", static_cast<int>(esp_reset_reason()),
+                                   gr::phaseName(core->status().phase));
   Serial.println("Type 'help'. Magnet on = disarmed (bench mode).");
 }
 

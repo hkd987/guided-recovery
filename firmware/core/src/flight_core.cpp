@@ -1,6 +1,7 @@
 #include "gr/flight_core.hpp"
 
 #include <cmath>
+#include <cstddef>
 
 namespace gr {
 
@@ -99,6 +100,53 @@ bool FlightCore::benchSetBrake(int ch, float frac) {
 
 void FlightCore::benchRelease() {
   benchTarget_[0] = benchTarget_[1] = 0.0f;
+}
+
+uint32_t resumeChecksum(const ResumeState& r) {
+  // FNV-1a over everything before the checksum field.
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(&r);
+  uint32_t h = 2166136261u;
+  for (size_t i = 0; i < offsetof(ResumeState, checksum); ++i) h = (h ^ p[i]) * 16777619u;
+  return h;
+}
+
+ResumeState FlightCore::resumeState(const int32_t encoder[2]) const {
+  ResumeState r;
+  r.magic = kResumeMagic;
+  r.stage = static_cast<uint8_t>(st_.stage);
+  r.homeValid = st_.homeValid ? 1 : 0;
+  r.faults = st_.faults;
+  r.homeLat = st_.homeLat;
+  r.homeLon = st_.homeLon;
+  r.groundPressure = st_.groundPressure;
+  r.encoder[0] = encoder[0];
+  r.encoder[1] = encoder[1];
+  r.checksum = resumeChecksum(r);
+  return r;
+}
+
+bool FlightCore::resume(const ResumeState& r) {
+  if (r.magic != kResumeMagic || r.checksum != resumeChecksum(r)) return false;
+  const auto stage = static_cast<FlightStage>(r.stage);
+  if (stage != FlightStage::Ascent && stage != FlightStage::Descent && stage != FlightStage::Canopy) return false;
+  if (!(r.groundPressure > 1000.0f)) return false;
+  reset();
+  det_.resumeAt(stage);
+  st_.stage = stage;
+  st_.faults = static_cast<uint16_t>(r.faults | kFaultReset);
+  if (r.homeValid) {
+    home_.set(r.homeLat, r.homeLon);
+    st_.homeValid = true;
+    st_.homeLat = r.homeLat;
+    st_.homeLon = r.homeLon;
+  }
+  groundP_.reset(r.groundPressure);
+  st_.groundRefValid = true;
+  st_.groundPressure = r.groundPressure;
+  // Under a canopy we no longer know enough to steer safely: release both brakes.
+  st_.phase = stage == FlightStage::Canopy ? Phase::Neutral
+              : stage == FlightStage::Ascent ? Phase::Ascent : Phase::Descent;
+  return true;
 }
 
 void FlightCore::clearWinchFaults() {

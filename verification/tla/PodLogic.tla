@@ -26,12 +26,13 @@ EXTENDS Naturals, FiniteSets, TLC
 CONSTANT Mutation
   \* "none" = the real logic. The other values each re-introduce one bug so
   \* we can see TLC catch it: "stale_candidate" (the bug this model found),
-  \* "motors_in_descent", "home_unfrozen", "no_gps_failsafe", "disarm_in_flight".
+  \* "motors_in_descent", "home_unfrozen", "no_gps_failsafe", "disarm_in_flight",
+  \* "resume_steering" (a restart under canopy goes straight back to guiding).
 
 Stages == {"Disarmed", "Pad", "Ascent", "Descent", "Canopy", "Landed"}
 Phases == {"Disarmed", "Pad", "Ascent", "Descent", "Guided", "Spiral", "Neutral", "Landed"}
 FaultNames == {"GpsLost", "Fence", "WinchL", "WinchR", "Lopsided", "Collapse",
-               "LowBattery", "NoHome", "LowDeploy"}
+               "LowBattery", "NoHome", "LowDeploy", "Reset"}
 SpiralReasons == {"GpsLost", "Fence", "WinchL", "WinchR", "Lopsided", "LowBattery", "NoHome"}
 Homes == 0..2   \* 0 = no home point; 1 and 2 = two different averaged GPS positions
 InFlight == {"Ascent", "Descent", "Canopy"}
@@ -46,7 +47,8 @@ InitState == [stage  |-> "Disarmed",  \* PhaseDetector stage
               motors |-> FALSE,       \* Outputs::motorsEnabled
               steer  |-> FALSE,       \* Status::steeringActive (brakes commanded)
               faults |-> {},          \* Status::faults (latched)
-              hazard |-> FALSE]       \* ghost: a guidance-ending hazard was present this step
+              hazard |-> FALSE,       \* ghost: a guidance-ending hazard was present this step
+              rc     |-> FALSE]       \* ghost: the processor restarted under canopy this flight
 
 -----------------------------------------------------------------------------
 (* Inputs. Only the inputs the code actually reads in a given stage vary; *)
@@ -169,11 +171,26 @@ Update(x, in) ==
                          \cup (IF mot /\ in.stallR THEN {"WinchR"} ELSE {})
   IN [stage |-> d.stage, phase |-> ph, cand |-> d.cand, home |-> home1, bench |-> bench1,
       motors |-> mot, steer |-> ph \in {"Guided", "Spiral"}, faults |-> f2,
-      hazard |-> (in.gps \/ in.fence \/ in.lopsided \/ in.lowBatt \/ in.collapse)]
+      hazard |-> (in.gps \/ in.fence \/ in.lopsided \/ in.lowBatt \/ in.collapse),
+      rc |-> IF d.stage = "Disarmed" THEN FALSE ELSE r.rc]
+
+(* A processor restart in flight (brownout, watchdog, panic), followed by    *)
+(* FlightCore::resume() from the snapshot kept in RTC memory. No update has  *)
+(* run yet, so the motors are still off.                                    *)
+Resume(x) ==
+  [stage  |-> x.stage,
+   phase  |-> IF x.stage = "Canopy"
+              THEN (IF Mutation = "resume_steering" /\ x.home # 0 THEN "Guided" ELSE "Neutral")
+              ELSE x.stage,
+   cand   |-> FALSE, home |-> x.home, bench |-> FALSE, motors |-> FALSE,
+   steer  |-> FALSE,
+   faults |-> x.faults \cup {"Reset"}, hazard |-> FALSE,
+   rc     |-> x.rc \/ x.stage = "Canopy"]
 
 -----------------------------------------------------------------------------
 Init == s = InitState
-Next == \E in \in InputsFor(s) : s' = Update(s, in)
+WarmReset == s.stage \in InFlight /\ s' = Resume(s)
+Next == (\E in \in InputsFor(s) : s' = Update(s, in)) \/ WarmReset
 
 \* Fairness: time passes after landing (the 10 s line-release timer runs out).
 LandedTick == s.phase = "Landed"
@@ -222,6 +239,10 @@ SpiralHasReason == s.phase = "Spiral" => s.faults \cap SpiralReasons # {}
 \* Disarmed means no launch is pending.
 DisarmedMeansNoLaunchPending == s.stage = "Disarmed" => ~s.cand
 
+\* After a restart under canopy the pod never steers again that flight: it
+\* cannot trust its rebuilt estimates, so it releases the brakes and rides.
+NoSteeringAfterCanopyRestart == s.rc => ~s.steer
+
 -----------------------------------------------------------------------------
 (* Step properties: true of every transition. *)
 
@@ -259,4 +280,6 @@ WitnessBenchJamFlies  == ~(s.phase = "Spiral" /\ s.faults = {"WinchL", "WinchR"}
 WitnessNoHomeSpiral   == ~(s.phase = "Spiral" /\ s.faults = {"NoHome"})
 WitnessLandedNoCanopy == ~(s.phase = "Landed" /\ s.faults = {} /\ s.motors)
 WitnessArmedWithJam   == ~(s.phase = "Pad" /\ "WinchL" \in s.faults)
+WitnessRestartRelease == ~(s.phase = "Neutral" /\ s.rc /\ s.motors)
+WitnessRestartGuides  == ~(s.phase = "Guided" /\ s.faults = {"Reset"})
 =============================================================================

@@ -20,6 +20,12 @@ void PhaseDetector::reset() {
   lastT_ = 0.0f;
 }
 
+void PhaseDetector::resumeAt(FlightStage stage) {
+  reset();
+  stage_ = stage;
+  burnout_ = true;  // a restart mid-boost is not worth modelling; thrust is long over
+}
+
 void PhaseDetector::clearFlight() {
   candidate_ = false;
   candT_ = accelAboveT_ = baroLaunchT_ = 0.0f;

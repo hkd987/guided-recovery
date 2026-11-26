@@ -50,6 +50,22 @@ struct Status {
   float launchTime = -1.0f, apogeeTime = -1.0f, canopyTime = -1.0f;
 };
 
+// What must survive a processor restart in flight. The ESP32 target keeps
+// it in RTC memory (kept through brownout, watchdog and panic resets).
+struct ResumeState {
+  uint32_t magic = 0;
+  uint8_t stage = 0;          // FlightStage
+  uint8_t homeValid = 0;
+  uint16_t faults = 0;
+  double homeLat = 0.0, homeLon = 0.0;
+  float groundPressure = 0.0f;
+  int32_t encoder[2] = {0, 0};  // winch positions in counts (encoders restart at 0)
+  uint32_t checksum = 0;
+};
+static_assert(sizeof(ResumeState) == 40, "ResumeState must stay padding-free (it is checksummed bytewise)");
+constexpr uint32_t kResumeMagic = 0x47525253;  // "GRRS"
+uint32_t resumeChecksum(const ResumeState& r);
+
 class FlightCore {
  public:
   explicit FlightCore(const Params& p = Params{});
@@ -68,6 +84,15 @@ class FlightCore {
   void benchRelease();
   bool benchActive() const { return benchActive_; }
   void clearWinchFaults();
+
+  // Snapshot to keep across a restart (call every cycle; cheap).
+  ResumeState resumeState(const int32_t encoder[2]) const;
+  // Call once, before the first update(), after a restart that was not a
+  // power-on. Returns true if a flight was resumed:
+  //   Ascent / Descent -> carry on detecting, with home and ground pressure;
+  //   Canopy           -> Neutral: both brakes released, no more steering.
+  // Anything else (bench, pad, landed) is an ordinary boot.
+  bool resume(const ResumeState& r);
 
  private:
   void updatePadReferences(const Inputs& in, float dt);

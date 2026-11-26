@@ -177,6 +177,12 @@ void encodersRead(int32_t& left, int32_t& right) {
   right = total[1];
 }
 
+void encodersRestore(int32_t left, int32_t right) {
+  encodersZero();
+  total[0] = left;
+  total[1] = right;
+}
+
 void encodersZero() {
   for (int i = 0; i < 2; ++i) {
     pcnt_counter_clear(kUnits[i]);

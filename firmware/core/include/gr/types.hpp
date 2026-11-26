@@ -80,6 +80,7 @@ enum FaultBits : uint16_t {
   kFaultLowBattery = 1 << 6,
   kFaultNoHome = 1 << 7,
   kFaultLowDeploy = 1 << 8,
+  kFaultReset = 1 << 9,        // the processor restarted in flight and resumed
 };
 
 const char* phaseName(Phase p);

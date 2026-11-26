@@ -15,15 +15,18 @@ Proj(x) == [stage |-> x.stage, phase |-> x.phase, cand |-> x.cand, home |-> x.ho
 
 Full(o) == [stage |-> o.stage, phase |-> o.phase, cand |-> o.cand, home |-> o.home,
             bench |-> o.bench, motors |-> o.motors, steer |-> o.steer, faults |-> o.faults,
-            hazard |-> FALSE]
+            hazard |-> FALSE, rc |-> FALSE]
 
-Allowed(o1, a, o2) ==
-  \E in \in InputsFor(Full(o1)) : in.armed = a /\ Proj(Update(Full(o1), in)) = o2
+\* A recorded step is either one update, or (marked `resume`) a processor
+\* restart followed by FlightCore::resume().
+Allowed(o1, step) ==
+  IF step.resume
+  THEN o1.stage \in InFlight /\ Proj(Resume(Full(o1))) = step.o
+  ELSE \E in \in InputsFor(Full(o1)) : in.armed = step.armed /\ Proj(Update(Full(o1), in)) = step.o
 
 Steps == UNION { { <<k, j>> : j \in 1..(Len(Traces[k]) - 1) } : k \in 1..Len(Traces) }
 
-Bad == { st \in Steps :
-           ~Allowed(Traces[st[1]][st[2]].o, Traces[st[1]][st[2] + 1].armed, Traces[st[1]][st[2] + 1].o) }
+Bad == { st \in Steps : ~Allowed(Traces[st[1]][st[2]].o, Traces[st[1]][st[2] + 1]) }
 
 Report(b) == { <<TraceNames[st[1]], st[2], Traces[st[1]][st[2]].o, Traces[st[1]][st[2] + 1]>> : st \in b }
 
