@@ -67,13 +67,21 @@ int main(int argc, char** argv) {
   int canopyDetected = 0;
   std::string csv =
       "log,accel_source,has_main,main_t,deploy_t,slow_drogue,main_alt,outcome,settle_t,detected,detect_t,detect_agl,"
-      "detect_descent,delay,false_trigger,implausible,missed\n";
+      "detect_descent,delay,false_trigger,implausible,missed,descent_dt\n";
+  int companions = 0, noTruth = 0;
   for (const auto& f : files) {
     FlightLog log;
     std::string err;
-    if (!readFlightCsv(f, log, &err) || !log.hasTruth) {
+    bool companion = false;
+    const bool ok = readFlightCsv(f, log, &err, &companion);
+    if (companion) {  // Blue Raven high-rate file: read with its low-rate file
+      ++companions;
+      continue;
+    }
+    if (!ok || !log.hasTruth) {
       std::fprintf(stderr, "skip %s: %s\n", f.c_str(), err.empty() ? "no deployment truth" : err.c_str());
-      ++unreadable;
+      if (ok) ++noTruth;
+      else ++unreadable;
       continue;
     }
     ReplayOptions o = opt;
@@ -118,16 +126,19 @@ int main(int argc, char** argv) {
                   r.settleT, r.detected ? "at" : "never", r.detectT);
     }
     char line[1024];
-    std::snprintf(line, sizeof line, "%s,%s,%d,%.3f,%.3f,%d,%.0f,%s,%.3f,%d,%.3f,%.1f,%.2f,%.3f,%d,%d,%d\n",
+    std::snprintf(line, sizeof line, "%s,%s,%d,%.3f,%.3f,%d,%.0f,%s,%.3f,%d,%.3f,%.1f,%.2f,%.3f,%d,%d,%d,%.3f\n",
                   name.c_str(), log.accelSource.c_str(), r.hasMain, r.mainT, r.deployT, r.slowDrogue, r.mainAlt,
                   outcomeName(r.outcome), r.settleT, r.detected, r.detectT, r.detectAgl, r.detectDescent, r.delay,
-                  r.falseTrigger, r.implausible, r.missed);
+                  r.falseTrigger, r.implausible, r.missed, r.descentDt);
     csv += line;
   }
   const int nCanopy = byOutcome[MainOutcome::Canopy];
   std::printf("== Gate 3: log replay ==\n");
   std::printf("  logs replayed %d (unreadable %d), with a main deployment %d, without %d\n", replayed, unreadable,
               withMain, replayed - withMain);
+  if (noTruth || companions)
+    std::printf("  skipped: %d with no deployment truth, %d Blue Raven high-rate files (read with their low-rate file)\n",
+                noTruth, companions);
   std::printf(
       "  outcome after the main: canopy %d, at a band edge %d, fast or failed %d, settled below 30 m %d, log too short "
       "%d\n",

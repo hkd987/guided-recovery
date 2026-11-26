@@ -20,7 +20,20 @@ comment, as AltosUI does, is fine; units in brackets such as `height (ft)` or
 AltOS exports from AltosUI (TeleMetrum, TeleMega, EasyMega, EasyMini) work
 as-is. EasyMini has no accelerometer: AltosUI fills its acceleration column
 from the barometer, so those logs show no opening shocks and the replay
-allows them a longer window. Other brands: rename columns to match.
+allows them a longer window.
+
+Other formats read as-is:
+
+| Flight computer | What to drop in | Deployment truth | Accelerometer |
+|---|---|---|---|
+| Featherweight **Blue Raven** | the low-rate file (`Flight_Time_(s)`, `Baro_Press_(atm)`, event flags) **and** its high-rate file in the same folder, named the same with `LR` -> `HR` (or `low_rate`/`lowrate`/`low-rate` -> `high...`) | first `Main_fired` row; a unit whose main never fired is skipped | high-rate `Accel_X/Y/Z` in g, 500 Hz; the axis carrying gravity on the pad is the airframe axis |
+| Missile Works **RRC3** | the CSV export (`Time,Altitude,Pressure,...,Events,...`) | the `Main` event | none: the replay feeds the pod barometric acceleration, so no opening jolts |
+| **Eggtimer** (Quantum, Quasar, TRS) | the CSV (`T,Alt,Veloc,FAlt,FVeloc,...,Drogue,Main`; Alt in feet) | `Main` column turning nonzero | none, as RRC3 |
+
+Pass the Blue Raven low-rate file; a high-rate file given on its own is
+skipped. If its high-rate sibling is missing, the replay runs on the
+barometer alone. Some exports hold the flight twice; only the first copy is
+read. Other brands: rename columns to match the table above.
 
 Only add logs you have permission to share. The three logs here now are
 MIT-licensed; see [THIRD_PARTY.md](THIRD_PARTY.md).
