@@ -53,6 +53,13 @@ Follow [WIRING.md](WIRING.md). Key points:
 
 ## 3. Install the OS
 
+**Browser (easiest):** open the installer page
+(`https://hkd987.github.io/guided-recovery/`) in desktop Chrome or Edge. Unplug
+the 2S pack, connect the Heltec by USB-C, click **Install**, and accept the
+erase prompt on a first install. The page also installs the ground receiver.
+
+**From source:**
+
 ```sh
 pip install platformio
 git clone <this repo> && cd guided-recovery/firmware/targets/esp32s3

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install Guided Recovery OS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,600..800&family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+<style>
+:root {
+  --bg: #eef1f4; --surface: #ffffff; --ink: #142029; --muted: #56636f; --rule: #d3dae1;
+  --accent: #c8410b; --accent-ink: #ffffff;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0e141a; --surface: #151d25; --ink: #e4e9ee; --muted: #94a2ae; --rule: #2b3742;
+          --accent: #ff8a57; --accent-ink: #1a0d06; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 var(--body);
+       padding: 40px max(16px, env(safe-area-inset-right, 0px)) 64px max(16px, env(safe-area-inset-left, 0px)); }
+main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+h1, h2 { font-family: var(--display); font-stretch: 112%; margin: 0; line-height: 1.15; text-wrap: balance; }
+h1 { font-size: clamp(1.9rem, 5vw, 2.6rem); font-weight: 800; }
+h2 { font-size: 1.25rem; font-weight: 700; }
+p { margin: 0; }
+.eyebrow { font: 500 0.75rem/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.muted { color: var(--muted); }
+.card { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+ol { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 8px; }
+code { font-family: var(--mono); font-size: 0.9em; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+esp-web-install-button { --esp-tools-button-color: var(--accent); --esp-tools-button-text-color: var(--accent-ink); --esp-tools-button-border-radius: 8px; }
+.note { font-size: 0.9rem; color: var(--muted); }
+esp-web-install-button:not(:defined) [slot] { display: none; }
+esp-web-install-button:not(:defined)::before { content: "Loading the installer..."; color: var(--muted); font-size: 0.9rem; }
+button[slot="activate"] { font: 600 1rem/1 var(--body); background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px; padding: 12px 18px; cursor: pointer; }
+button[slot="activate"]:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <header style="display:flex;flex-direction:column;gap:12px">
+    <div class="eyebrow">S pod · Heltec WiFi LoRa 32 V3 · build __VERSION__</div>
+    <h1>Install Guided Recovery OS</h1>
+    <p class="muted">Flash the pod's operating system straight from this page over USB. You don't need any tools installed. Use desktop Chrome or Edge.</p>
+  </header>
+
+  <section class="card">
+    <h2>1. Install on the pod</h2>
+    <ol>
+      <li>Build the pod from the <a href="https://github.com/hkd987/guided-recovery/blob/main/docs/BUILD_GUIDE.md">parts list and wiring guide</a>. It must be a Heltec <b>V3</b> board; a V4 needs a different pin map.</li>
+      <li>Put the magnet on (disarmed). Unplug the 2S battery, then connect the board with a USB-C data cable.</li>
+      <li>Click Install, pick the board's serial port, and accept the erase prompt on a first install.</li>
+    </ol>
+    <esp-web-install-button manifest="manifest-pod.json">
+      <span slot="unsupported">This browser can't flash over USB. Use desktop Chrome or Edge.</span>
+      <span slot="not-allowed">Open this page over https to install.</span>
+    </esp-web-install-button>
+  </section>
+
+  <section class="card">
+    <h2>2. Check it on the bench</h2>
+    <ol>
+      <li>After installing, choose <b>Logs &amp; console</b> in the installer's menu, or use any serial terminal at 115200 baud.</li>
+      <li>Stand the pod upright with the magnet on, and type <code>selftest</code>. It checks every sensor, the GPS, battery, log space and radio, and moves each winch 25 mm.</li>
+      <li>Fix anything it reports. It names the setting to change, for example <code>set winch.encL -1</code> then <code>save</code>.</li>
+      <li>Run <code>log erase</code> once, then <code>zero</code> with the brake lines slack.</li>
+    </ol>
+    <p class="note">Before any flight, fly the bench hardware-in-the-loop test (gate 4) and drop tests, as described in the build guide.</p>
+  </section>
+
+  <section class="card">
+    <h2>Optional: ground receiver</h2>
+    <p class="muted">A second Heltec V3 with nothing attached shows the pod's flight phase, height and position over LoRa.</p>
+    <esp-web-install-button manifest="manifest-ground.json">
+      <button slot="activate">Install ground receiver</button>
+    </esp-web-install-button>
+  </section>
+
+  <p class="note">The pod never connects to or fires any pyro channel. Fly under your club's rules and NAR/Tripoli codes. Set your radio band with <code>set radio.mhz 868</code> outside the US.</p>
+</main>
+</body>
+</html>

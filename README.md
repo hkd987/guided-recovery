@@ -69,7 +69,14 @@ See [verification/README.md](verification/README.md).
 
 ## Install the OS on a pod
 
-See [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md). Short version:
+See [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md).
+
+**From the browser, with no tools:** open the installer page
+(`https://hkd987.github.io/guided-recovery/` once GitHub Pages is enabled), plug
+in the Heltec V3, and click Install. CI builds it from every push to `main`;
+`tools/make_installer.sh` builds the same site locally.
+
+**From source:**
 
 ```sh
 pip install platformio
