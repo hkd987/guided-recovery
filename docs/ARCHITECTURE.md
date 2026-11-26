@@ -30,7 +30,7 @@ That's the spec's "thin hardware layer" pattern, as used by ArduPilot's SITL.
 
 | Stage | Module | What it does |
 |---|---|---|
-| Sense | `BaroVoter`, `GpsSelector` | One or two barometers: health checks (silent, out of range, frozen), cross-check, GPS Doppler decides which is wrong; no believable barometer blocks canopy confirmation and ends guidance. One or two GPS receivers: fail over to receiver 2 (pad-calibrated offset) |
+| Sense | `BaroVoter`, `GpsSelector` | One or two barometers: health checks (silent, out of range, frozen), cross-check, GPS Doppler decides which is wrong; a lone barometer out of step with GPS over the last 5 s is distrusted until it agrees again for 5 s; before the canopy, each ejection jolt restarts the GPS comparison (the bay just opened); no believable barometer blocks canopy confirmation and ends guidance. One or two GPS receivers: fail over to receiver 2 (pad-calibrated offset) |
 | Estimate | `AltitudeFilter` | Barometric height and climb rate (Kalman); rejects ejection pressure spikes |
 | | `AttitudeFilter` | Gravity direction only (Mahony). Turns gyro rates into turn rate about the vertical. The accelerometer is ignored between launch and canopy |
 | | `GeoOrigin` | GPS → metres from home |

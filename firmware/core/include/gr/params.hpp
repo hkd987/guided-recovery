@@ -61,6 +61,12 @@ struct DetectorParams {
   uint8_t homeMinSv = 6;
   uint16_t homeMinFixes = 50;  // 5 s at 10 Hz
   float homeMaxSpeed = 0.6f;
+  // Moved after arming (armed at the prep table, then carried to the pad):
+  // once good fixes sit this far from the average for this many fixes, the
+  // average starts again. The old home stays until the new one has
+  // homeMinFixes, then is replaced.
+  float homeMoveM = 25.0f;
+  uint16_t homeMoveFixes = 30;  // 3 s at 10 Hz
 };
 
 struct GuidanceParams {

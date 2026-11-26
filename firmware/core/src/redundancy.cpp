@@ -25,7 +25,8 @@ float BaroVoter::residual(int i, float t, bool& valid, float* gpsChange) const {
   if (count_ < 2) return 0.0f;
   const Sample& now = hist_[(head_ + kHist - 1) % kHist];
   if (!now.ok[i] || !now.gps || t - now.t > 1.0f) return 0.0f;
-  for (int k = count_ - 1; k >= 1; --k) {
+  // The most recent sample at least one window old.
+  for (int k = 1; k < count_; ++k) {
     const Sample& old = hist_[(head_ + kHist - 1 - k) % kHist];
     if (now.t - old.t < p_.gpsWindow) continue;
     if (!old.ok[i] || !old.gps || old.seg != now.seg) return 0.0f;
@@ -68,7 +69,9 @@ void BaroVoter::update(float t, bool fresh1, float p1, bool present2, bool fresh
   }
   const bool gpsRecent = gpsSeen_ && t - gpsT_ < 1.0f;
 
-  auto avail = [&](int i) { return (i == 0 || present2_) && !failed_[i] && t - lastT_[i] <= p_.staleTime; };
+  // working: present, reading, not known broken. avail: and believed.
+  auto working = [&](int i) { return (i == 0 || present2_) && !failed_[i] && t - lastT_[i] <= p_.staleTime; };
+  auto avail = [&](int i) { return working(i) && !doubt_[i]; };
   // Height of whatever else can show the pod moving: the other barometer, or GPS.
   auto otherHeight = [&](int i, bool& ok) {
     const int j = 1 - i;
@@ -107,7 +110,7 @@ void BaroVoter::update(float t, bool fresh1, float p1, bool present2, bool fresh
     Sample sm;
     sm.t = t;
     for (int i = 0; i < 2; ++i) {
-      sm.ok[i] = avail(i);
+      sm.ok[i] = working(i);  // a doubted barometer keeps a history, so it can show it agrees again
       sm.h[i] = sm.ok[i] ? isaHeight(last_[i]) : 0.0f;
     }
     sm.gps = gpsGood || (gpsRecent && t - gpsT_ < 0.3f);
@@ -118,16 +121,19 @@ void BaroVoter::update(float t, bool fresh1, float p1, bool present2, bool fresh
     if (count_ < kHist) ++count_;
   }
 
-  // A lone barometer must agree with GPS height change.
-  const int nAvail = (avail(0) ? 1 : 0) + (avail(1) ? 1 : 0);
+  // A lone barometer must agree with GPS height change. Out of step, it is
+  // doubted (not believed) until it has agreed again for gpsRecoverTime.
+  const int nWorking = (working(0) ? 1 : 0) + (working(1) ? 1 : 0);
   for (int i = 0; i < 2; ++i) {
     bool valid = false;
     float dg = 0.0f;
-    const float r = checkGps && avail(i) ? residual(i, t, valid, &dg) : 0.0f;
+    const float r = checkGps && working(i) ? residual(i, t, valid, &dg) : 0.0f;
     const float tol = std::fmax(p_.gpsTolM, p_.gpsTolFrac * std::fabs(dg));
-    if (valid && std::fabs(r) > tol) gpsBadT_[i] += dt;
-    else gpsBadT_[i] = 0.0f;
-    if (nAvail == 1 && gpsBadT_[i] >= p_.gpsTolTime) failed_[i] = true;
+    const bool bad = valid && std::fabs(r) > tol;
+    gpsBadT_[i] = bad ? gpsBadT_[i] + dt : 0.0f;
+    gpsOkT_[i] = valid && !bad ? gpsOkT_[i] + dt : 0.0f;
+    if (nWorking == 1 && gpsBadT_[i] >= p_.gpsTolTime) doubt_[i] = true;
+    if (doubt_[i] && (gpsOkT_[i] >= p_.gpsRecoverTime || nWorking == 2)) doubt_[i] = false;
   }
 
   // Two barometers must agree with each other; GPS decides who is wrong.

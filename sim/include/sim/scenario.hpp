@@ -41,6 +41,7 @@ struct ScenarioOptions {
   FaultType fault = FaultType::None;
   bool dualDeployOnly = false;
   bool singleDeployOnly = false;
+  double bayTau = 0.0;            // s; see Scenario::bayTau
 };
 
 struct Scenario {
@@ -116,6 +117,10 @@ struct Scenario {
   double gpsDropMean = 1.0;       // s, mean dropout length (exponential)
   int gpsRateDiv = 20;            // control frames per fix (20 = 10 Hz)
   bool gpsStressCanopyOnly = true;  // degrade only once the canopy is out
+  // Where the pod rides: until the parafoil deploys, its barometers see the
+  // bay's air, which follows outside pressure with this time constant
+  // (0: a well-vented bay, the default; large: a nearly sealed one).
+  double bayTau = 0.0;
   // Backup kit
   bool baro2 = false, gps2 = false;
   double baro2Bias = 0.0;         // Pa, unit-to-unit offset of the second barometer

@@ -111,6 +111,22 @@ What it says:
   poor GPS 55% → 65%. Half the simulated dropouts are shared by both
   receivers (the canopy overhead shades both antennas), which limits it.
 
+### Bay venting
+
+The pod rides in the recovery bay, so its barometer reads the bay's air until
+the parafoil comes out. `grsim gate2 --bay-tau S` makes that air lag outside
+pressure by S seconds (1,000 nominal flights each):
+
+| Lag | 0 | 0.5 s | 1 s | 2 s | 5 s | 10 s | 30 s |
+|---|---|---|---|---|---|---|---|
+| Within 30 m | 94.5% | 94.5% | 94.4% | 92.9% | 90.3% | 89.4% | 50.2% |
+| Steered early | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+The 30 s case (a nearly sealed bay) misses 23 launches and confirms late;
+it stays safe. One 1/4 in vent hole beside the pod keeps the lag in the
+milliseconds ([INTEGRATION.md](INTEGRATION.md#a-vent-hole-beside-the-pod-needed)).
+Before item 25 was fixed, 0.5 s of lag already cost 39 points.
+
 ### Backup kit (optional)
 
 The kit is optional and does not make the pod safer: a basic pod is already
@@ -224,7 +240,7 @@ What the sweep says:
 | Winch speed | 160 rpm no-load → 134 mm/s; ≈ 111 mm/s at 5.9 N → 120 mm full brake in ≈ 1.1 s | OK. The simulated canopy needs about 1 s |
 | Battery | Logic ≈ 0.55 W (ESP32-S3, GPS, sensors, LoRa at 2 Hz) → ≈ 90 mA from 2S. Steering ≈ 0.4 A while active. 30 min pad + 5 min flight ≈ 80 mAh | 450 mAh ≈ 5 flights or about 4 h standby |
 | Motor driver | 6 V motors on 2S stall at about 2 A instantaneous, the DRV8833 peak. The firmware caps average voltage at 6 V and cuts stalls in about 0.4 s | Acceptable. Watch on the bench |
-| Mass | Board 14 g, sensors 8 g, motors 22 g, battery 27 g, shell 40 g, Kevlar/swivels/links 30 g, misc 20 g ≈ **160 g** | About 11% of a 1.5 kg rocket. It counts toward the Class 1 1,500 g limit |
+| Mass | From the enclosure CAD ([hardware/pod](../hardware/pod/README.md)): printed parts ≈ 90 g, electronics, motors and battery ≈ 108 g, wiring, Kevlar and hardware ≈ 20 g: **≈ 218 g** (counting the Heltec at its listed 35 g; ≈ 200 g if that listing includes the antenna and headers), plus the swivel and quick links | 13–15% of a 1.5 kg rocket. It counts toward the Class 1 1,500 g limit |
 | Log space | 64-byte records at 50 Hz in flight (5 Hz on the pad) in 5.4 MB | About 28 min of flight-rate logging |
 | Control loop | 200 Hz on core 1; flight core math is cheap. Flash writes are page programs only (< 1 ms) | To be measured on hardware (`status` shows loop max and overruns) |
 
@@ -234,7 +250,8 @@ Items 1–8 were each found by a failing Monte Carlo run, traced in a
 single-flight replay, and fixed. Items 9–11 came from the TLA+ model, the
 gate-4 harness and code review. Items 12–15 and 20 came from replaying real
 flight logs, items 16–19 from larger fault batches and the stress sweep, and
-items 21–24 from building the backup kit. This is the point of software-first
+items 21–24 from building the backup kit, and items 25–26 from working
+out how the pod fits real rockets ([INTEGRATION.md](INTEGRATION.md)). This is the point of software-first
 testing.
 
 1. **Steering on GPS course fails when wind aloft beats the canopy.** At 700 m
@@ -349,6 +366,29 @@ testing.
     low inside: following the guide, the winches would never have moved. The
     watchdog now drives that pin; a pod built without it must tie SLP to
     3.3 V.
+25. **A barely vented bay lost most flights** (found by a new simulator
+    setting, `--bay-tau`). The pod's barometer sits in the recovery bay until
+    the parafoil comes out, and that air lags outside pressure. With a lag of
+    only 0.5 s, 41% of flights never confirmed the canopy (55% landed within
+    30 m), though none steered early. Two causes in the barometer's GPS
+    cross-check: its "5 s" window actually reached back up to 8 s (the loop
+    ran oldest-first), into the ascent; and a lone barometer, once out of
+    step with GPS, was never trusted again. Fixes: the window is the most
+    recent 5 s; a lone barometer is distrusted only until it has agreed with
+    GPS for 5 s (a frozen one, or one out-voted by a second barometer, stays
+    out); and before the canopy, each ejection jolt restarts the comparison,
+    since the bay just opened. Now: no loss up to 1 s of lag, 93% at 2 s, 90%
+    at 5–10 s, 50% for a nearly sealed bay (30 s), never an early steer. A
+    rough orifice-flow estimate says one 1/4 in vent keeps the lag in the
+    milliseconds, so the integration guide now requires one. CI flies 500
+    flights with 1 s of lag on every push.
+26. **Armed at the prep table, the home point stayed there** (found while
+    writing the integration guide). The home point is a ~60 s running mean;
+    carried to the pad and launched within a few minutes, it was still
+    pulled toward the prep table. Fix: once 3 s of good fixes sit more than
+    25 m from the mean, it starts again, and the old home is replaced after
+    5 s of new fixes (it stays valid meanwhile, so the TLA+ model's "home
+    changes only on the pad" still covers it). Unit test added.
 
 ## Not proven yet
 

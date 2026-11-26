@@ -60,6 +60,7 @@ class PhaseDetector {
   float canopyTime() const { return canopyT_; }
   float maxAgl() const { return maxAgl_; }
   float lastJoltTime() const { return lastJoltT_; }
+  float lastShockTime() const { return lastShockT_; }  // accelerometer jolts only (not the sense line)
   float steadyFor() const { return streakActive_ ? (lastT_ - streakStart_) : 0.0f; }
   float smoothedDescent() const { return descent_.value(); }
   // Mean descent rate over the last steadyWindow seconds (m/s, down positive);
@@ -87,6 +88,7 @@ class PhaseDetector {
   float maxAgl_ = 0.0f;
   float apogeeCondT_ = 0.0f;
   float lastJoltT_ = -1e9f;
+  float lastShockT_ = -1e9f;
   LowPass descent_{0.5f};
   bool streakActive_ = false;
   float streakStart_ = 0.0f;

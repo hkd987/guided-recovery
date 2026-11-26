@@ -22,7 +22,7 @@ says what the kit buys). The motor-driver watchdog is not optional.
 | Left encoder | A / B | **4 / 7** | power encoders from **3.3 V** (outputs pull up to their supply) |
 | Right encoder | A / B | **2 / 26** | GPIO 26 is free on the V3 only |
 | Arming | reed switch to GND | **34** | magnet on = switch closed = disarmed (bench mode) |
-| *Optional backup kit:* main-fired input | opto-isolator output to GND | **33** | never connect to the host's igniter circuit directly |
+| *Optional backup kit:* main-fired input | opto-isolator output: collector to 33, emitter to GND | **33** | the opto sits in the av-bay across a **spare** flight-computer channel, never the main charge's: [INTEGRATION.md](INTEGRATION.md#5-optional-the-main-fired-wire) |
 | Buzzer | NPN base (via 1 kΩ) | **40** | magnetic buzzer: add a flyback diode |
 | Battery sense | 2S+ → 100 kΩ → GPIO → 33 kΩ → GND | **3** | calibrate with `set batt.scale` |
 | *Optional backup kit:* second barometer | BMP390 SDA / SCL on the same bus | **41 / 42** | set it to the **other** I2C address: on the Adafruit 4816, solder SDO to GND (0x76) on one board only. The firmware finds it on its own |

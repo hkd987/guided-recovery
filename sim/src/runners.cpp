@@ -176,6 +176,9 @@ RunResult runSitl(const Scenario& s, const RunOptions& opt, std::vector<TraceRow
       if (!open && (st.steeringActive || st.phase == gr::Phase::Guided || st.phase == gr::Phase::Spiral ||
                     w.winch(0).pos > 3.0 || w.winch(1).pos > 3.0))
         r.navBeforeCanopy = true;
+      if (r.launchDelay < 0.0 && w.launchT() >= 0.0 && st.stage != gr::FlightStage::Pad &&
+          st.stage != gr::FlightStage::Disarmed)
+        r.launchDelay = w.t() - w.launchT();
       if (!r.canopyConfirmed && st.stage == gr::FlightStage::Canopy) {
         r.canopyConfirmed = true;
         r.confirmDelay = open ? w.t() - w.openT() : -(w.deployT() >= 0 ? w.t() - w.deployT() : 0.0);

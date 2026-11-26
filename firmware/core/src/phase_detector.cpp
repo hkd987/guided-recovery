@@ -14,6 +14,7 @@ void PhaseDetector::reset() {
   maxAgl_ = 0.0f;
   apogeeCondT_ = 0.0f;
   lastJoltT_ = -1e9f;
+  lastShockT_ = -1e9f;
   descent_ = LowPass(0.5f);
   streakActive_ = false;
   landedT_ = 0.0f;
@@ -62,6 +63,7 @@ void PhaseDetector::clearFlight() {
   maxAgl_ = 0.0f;
   apogeeCondT_ = 0.0f;
   lastJoltT_ = -1e9f;
+  lastShockT_ = -1e9f;
   streakActive_ = false;
   landedT_ = 0.0f;
   histHead_ = histCount_ = 0;
@@ -134,6 +136,7 @@ void PhaseDetector::update(const DetectorInput& in, float dt) {
         }
       } else if (in.accelG > p_.joltAccelG) {
         lastJoltT_ = in.t;
+        lastShockT_ = in.t;
       }
       if (in.mainFired && p_.mainSense != 0) {
         lastJoltT_ = in.t;

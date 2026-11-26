@@ -136,6 +136,8 @@ class FlightCore {
   // Home averaging (degrees, double precision).
   double homeLatSum_ = 0.0, homeLonSum_ = 0.0;
   uint32_t homeN_ = 0;
+  uint16_t homeFarN_ = 0;  // consecutive good fixes far from the average
+  float voterShockT_ = -1e9f;  // last ejection jolt the barometer voter was told about
   // Navigation.
   Vec2 pos_, vel_;
   float lastWindSolveT_ = 0.0f;

@@ -46,6 +46,7 @@ struct RunResult {
   double flightTime = 0.0;     // launch to landing
   bool canopyConfirmed = false;
   double confirmDelay = -1.0;  // s after the canopy actually opened
+  double launchDelay = -1.0;   // s from the motor lighting to the pod's "ascent" (-1: never)
   bool navBeforeCanopy = false;
   bool crashed = false;        // non-finite output or exception
   bool timedOut = false;

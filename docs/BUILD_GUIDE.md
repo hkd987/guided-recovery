@@ -21,14 +21,14 @@ order.
 | 4 | GPS: **u-blox M10** module with patch antenna, UART | HGLRC M100 Mini (RaceDayQuads) | 21.50 | Any M10 with UART works. The firmware configures it on every boot |
 | 5 | Winches: 2× **Pololu 6 V HPCB 210:1 micro metal gearmotor**, extended shaft, with magnetic encoder | Pololu (210:1 HPCB w/ encoder) | 64.90 | 150:1 also works. **Not** generic N20s: too weak for the brake-line load |
 | 6 | Motor driver: **DRV8833** dual H-bridge | Adafruit 3297 | 5.95 | 2S only (10.8 V max) |
-| 7 | Battery: **2S LiPo 450 mAh** | Tattu 2S 450 75C | 7.80 | Enough for several flights plus long pad waits |
+| 7 | Battery: **2S LiPo 450 mAh**, **long** version (61 × 16 × 15 mm) | Tattu 2S 450 75C, long size | 7.80 | Enough for several flights plus long pad waits. The enclosure is drawn for the long shape; the short 45 × 24 mm pack does not fit |
 | 8 | 5 V buck, ≥1 A, 6–9 V in | Pololu D24V10F5 (or Adafruit UBEC 1385) | 13.95 | Feeds the Heltec 5V pin |
-| 9 | Arming: reed switch + magnet | Adafruit 375 | 3.95 | Magnet on a remove-before-flight tag |
+| 9 | Arming: reed switch + magnet | Adafruit 375 (switch half) + a 12.7 × 3.2 mm N42 disc magnet | 3.95 + ~1 | The magnet goes in the printed remove-before-flight tag |
 | 10 | Buzzer, 85 dB, + NPN transistor + diode | Same Sky CMI-1295-85T | 5 | For finding the rocket in tall grass |
-| 11 | Structure: printed PETG/nylon shell, Kevlar load loop, 2 swivels, 2 quick links, PTFE line guides, 16 mm spools | — | ~20 | Estimate. The load path is Kevlar, never plastic |
+| 11 | Structure: printed enclosure ([hardware/pod](../hardware/pod/README.md)), Kevlar strap through it, 1 swivel (below the pod), 2 quick links, 2 PTFE tubes (2 mm OD), 8 M2 screws, bulkhead SMA + U.FL pigtail for the LoRa antenna | — | ~25 | Estimate. The load path is Kevlar, never plastic |
 | 12 | Wire, connectors, 100 k + 33 k resistors | — | ~5 | Estimate |
 | 13 | **Motor-driver watchdog**: 2× 2N3904, 2N3906, 2× BAT85, 1 µF ×2, 1.5 µF, 8 resistors | [WATCHDOG.md](WATCHDOG.md) | ~3 | Standard. Holds the motor driver asleep unless the flight loop keeps proving it's alive |
-| | **Total** | | **≈ $194** | Optional ADXL375 high-g logger (Adafruit 5374, $24.95) brings it to ≈ $219 |
+| | **Total** | | **≈ $200** | Optional ADXL375 high-g logger (Adafruit 5374, $24.95) brings it to ≈ $225 |
 | — | Test parafoils, 2–3 sizes (RC or balloon-payload market) | | TBD | Aim for **~8 m/s trim airspeed** at your pod + rocket weight (see FEASIBILITY.md) |
 
 **Changes from the spec's draft list (v0.1, ~$170):**
@@ -88,6 +88,10 @@ Follow [WIRING.md](WIRING.md). Key points:
 - Encoders on 3.3 V.
 - Reed switch to GND on GPIO 34.
 - Don't plug in USB while the battery is connected (unless the buck output has a diode).
+
+Then see [INTEGRATION.md](INTEGRATION.md) for fitting the pod to your rocket:
+the recovery train, the setting for your deployment setup, a vent hole, GPS
+through the airframe, and your tracker's radio band.
 
 ## 3. Install the OS
 
@@ -207,9 +211,13 @@ the PC. CI runs that on every push.
 ## 6. At the pad
 
 1. Pack the parafoil and pod as rehearsed in ground deployment tests (gate 5).
-2. Pull the magnet. The pod is now **armed**.
+2. Pull the magnet. The pod is now **armed**. You can do this at the prep
+   table before closing the rocket: the winches stay unpowered until the
+   canopy opens, and the pod relearns its home point once it sits still on
+   the rail ([INTEGRATION.md](INTEGRATION.md#arming)).
 3. The buzzer **chirps fast** until it has a GPS home point, then **chirps once every 2 s**.
-4. Wait for the slow chirp before launch. The OLED shows `HOME saved`.
+4. Wait for the slow chirp before launch. The ground receiver shows phase
+   `PAD` and `home` under 10 m with the rocket on the rail.
 5. If the pod never gets a home point, it still flies, but it only spirals
    after the canopy opens. It never guesses a target.
 
@@ -223,6 +231,8 @@ Fly the gates in order: bench HIL (4), ground deploys (5), drop tests (6),
 low-power (7), high-power (8). Fly under your club's rules and NAR/Tripoli
 codes.
 
-The pod never connects to or fires any pyro channel. Treat the optional
-"main fired" input as a sense line only, through an opto-isolator, and
-bench-test it against your host computer's continuity check first.
+The pod never fires any pyro channel. The optional "main fired" wire takes a
+**spare** channel on your flight computer, with the opto-isolator in the
+av-bay; never the main charge's own channel. Which flight computers can
+drive it, how to set them, and the bench test: [INTEGRATION.md, section
+5](INTEGRATION.md#5-optional-the-main-fired-wire).

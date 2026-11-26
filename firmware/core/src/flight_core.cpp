@@ -83,6 +83,8 @@ void FlightCore::reset() {
   groundP_ = LowPass(10.0f);
   homeLatSum_ = homeLonSum_ = 0.0;
   homeN_ = 0;
+  homeFarN_ = 0;
+  voterShockT_ = -1e9f;
   pos_ = vel_ = Vec2{};
   lastWindSolveT_ = 0.0f;
   trimSink_ = LowPass(5.0f);
@@ -172,6 +174,20 @@ void FlightCore::updatePadReferences(const Inputs& in, float dt) {
     if (g.fixType >= 3 && g.numSv >= p_.det.homeMinSv && g.hAcc <= p_.det.homeMaxHAcc &&
         speed <= p_.det.homeMaxSpeed) {
       const double lat = g.latE7 * 1e-7, lon = g.lonE7 * 1e-7;
+      // Carried somewhere else since arming: start the average again. Far
+      // fixes are left out until then, so one bad fix can't drag it.
+      if (homeN_ > 0) {
+        const double mLat = homeLatSum_ / homeN_, mLon = homeLonSum_ / homeN_;
+        const double dN = (lat - mLat) * 111320.0;
+        const double dE = (lon - mLon) * 111320.0 * std::cos(mLat * 3.14159265358979 / 180.0);
+        const double r = p_.det.homeMoveM;
+        if (dN * dN + dE * dE > r * r) {
+          if (++homeFarN_ < p_.det.homeMoveFixes) return;
+          homeLatSum_ = homeLonSum_ = 0.0;
+          homeN_ = 0;
+        }
+        homeFarN_ = 0;
+      }
       // Running mean over the most recent ~60 s of fixes.
       if (homeN_ >= 600) {
         homeLatSum_ *= 599.0 / 600.0;
@@ -194,6 +210,7 @@ void FlightCore::updatePadReferences(const Inputs& in, float dt) {
     // Disarming on the pad forgets the home point; arming learns it fresh.
     homeLatSum_ = homeLonSum_ = 0.0;
     homeN_ = 0;
+    homeFarN_ = 0;
     st_.homeValid = false;
     st_.homeFixes = 0;
     home_.valid = false;
@@ -330,6 +347,13 @@ const Outputs& FlightCore::update(const Inputs& in) {
   st_.gpsActive = static_cast<uint8_t>(gpsSel_.active());
 
   // ---- Barometer(s): one, or two cross-checked; GPS height breaks ties.
+  // Until the canopy is confirmed, a jolt is an ejection that may have just
+  // opened the bay the pod rides in: its air lagged the outside, so compare
+  // the barometers with GPS only from here on.
+  if (det_.lastShockTime() != voterShockT_) {
+    voterShockT_ = det_.lastShockTime();
+    if (st_.stage == FlightStage::Ascent || st_.stage == FlightStage::Descent) baro_.restartGpsCompare();
+  }
   baro_.update(t_, in.baroFresh, in.pressurePa, in.baro2Present, in.baroFresh2, in.pressurePa2, onPad,
                st_.stage == FlightStage::Descent || st_.stage == FlightStage::Canopy, gselGood, gsel.velD);
   st_.baroTrusted = baro_.trusted();

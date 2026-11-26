@@ -100,7 +100,7 @@ barometer, no second GPS`. That is information, not a fault.
 | `selftest` | `second barometer BMP390 (backup kit) agrees with the first` | over 300 Pa apart: a damaged sensor or a bad solder joint |
 | `status` | `baro trusted, baro 2 ok` | |
 | Second GPS, outdoors: `status` | `gps2 fitted (standby)` | GPS 2 TX to GPIO 19; its RX shares GPIO 39 with GPS 1 |
-| Sense line: drive the opto LED from a bench supply through its resistor | `status` shows `main-fired input ON` | opto output polarity; never wire it to the host's igniter circuit. Then choose `sense.main` 1 or 2 |
+| Sense line: drive the opto LED from a bench supply through its resistor, then from the flight computer's spare channel (its own test-fire, with no charge connected) | `status` shows `main-fired input ON` | opto output polarity; never wire it to the host's igniter circuit. Then choose `sense.main` 1 or 2 |
 
 ## 7. Rig the lines, then gate 4
 
@@ -126,3 +126,15 @@ outliers up to 140 g (docs/FEASIBILITY.md, gate 3). The simulator assumed 6 g.
 
 Keep every log from here on (`log dump`). From gate 5 the pod's own logs become
 the real replay test suite.
+
+## 9. In the airframe
+
+Before the first flight of a new airframe (see
+[INTEGRATION.md](INTEGRATION.md)):
+
+| Do | Expect | If not |
+|---|---|---|
+| Pod packed in the closed rocket, upright, outdoors, armed | ground receiver: `sv` 6 or more and `home` saved within 5 minutes | the tube blocks GPS (carbon fiber or metal): add a fiberglass window over the pod's roof, or the pod only spirals |
+| Carry it 50 m and set it down | `home` reads about 50 m, then under 10 m after about 10 s still | expected: the pod relearns home where it sits |
+| Your tracker on, pod transmitting beside it | the tracker's receiver still decodes every packet | move the pod's `radio.mhz` away from the tracker's frequency |
+

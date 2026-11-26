@@ -3,7 +3,8 @@
 Firmware and test harness for the **Guided Recovery Pod**: a small steering
 unit that clips into the harness between a model rocket and a ram-air
 parafoil, works out on its own when the canopy has opened, and flies it back
-to the launch pad. It needs no wiring to the rocket's flight computer.
+to the launch pad. It needs no wiring to the rocket's flight computer: see
+[docs/INTEGRATION.md](docs/INTEGRATION.md) for fitting it to your rocket.
 
 The first product is a **parts list** (the S pod, rockets up to 1.5 kg).
 Builders buy the parts, wire them to a Heltec WiFi LoRa 32 V3 board, and flash
@@ -22,6 +23,8 @@ this OS onto it.
 | Formal | Guardrails hold for **every** possible sensor/fault/restart sequence | TLA+ model checked with TLC; C++ traces validated against it | **PASS** 17 properties, 157,056 states, 7/7 injected bugs caught; 3,857/3,857 C++ steps conform |
 | Backup kit (optional) | Second barometer, second GPS, "main fired" sense line (≈ $34, 9–13 g). Not needed for safety: it turns "a sensor failed, spiral down safely" into "a sensor failed, still land on the pad" | Gate 2 faults with and without the kit | **PASS** barometer failures: 734/734 spiral safely without it, 787/787 still guide home with it. GPS loss: 381/381 spiral, 393/393 guide home on GPS 2. No change to normal flights (94.6%) |
 | Motor watchdog (standard) | A hung processor can't hold a brake: the winch driver sleeps unless the flight loop keeps proving it's alive | ngspice, across part tolerances, 3.0–3.6 V and 0–50 °C | **PASS** asleep within 0.15 s, in all 2,085 circuit simulations |
+| Bay venting | The pod still works when its bay's air lags outside pressure (it rides in the recovery bay) | `grsim gate2 --bay-tau`, 1,000 flights per lag | **PASS** no loss up to 1 s of lag, 90% at 10 s, never an early steer; one 1/4 in vent keeps the lag in milliseconds |
+| Enclosure | Every part fits, with clear paths for the brake lines, Kevlar and USB | OpenSCAD model from manufacturers' dimensions, exact mesh-boolean fit check | **PASS** 409 part pairs, no overlaps; 62 mm diameter (2.6 in tubes and up), 124 mm long, ≈ 218 g. Not printed yet |
 
 Firmware for the ESP32-S3 (pod and LoRa ground receiver) **compiles**. It has
 **not yet run on hardware**. See [docs/FEASIBILITY.md](docs/FEASIBILITY.md)
@@ -42,7 +45,8 @@ tools/report.py         HTML report from gate outputs
 logs/real/              real flight-log CSVs (yours, plus 3 MIT-licensed); CI replays them
 logs/public/            manifest of 135 public real flight-log files CI downloads for gate 3
 hardware/watchdog/      motor-driver watchdog circuit: ngspice netlist and requirement checks
-docs/                   build guide, wiring, architecture, feasibility
+hardware/pod/           printable enclosure (OpenSCAD) and its fit check
+docs/                   build guide, wiring, integration with your rocket, architecture, feasibility
 ```
 
 ## Run the software gates

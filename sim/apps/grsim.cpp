@@ -9,6 +9,7 @@
 //   grsim stress [--runs N] [--seed S] [--out DIR]               harsher-than-nominal conditions
 //
 // Stress dials (any command): --canopy-err L --turbulence L --swing L --gps L
+// (--bay-tau S: the pod rides in a bay whose air lags outside pressure by S s)
 // with L = 0 (nominal), 1 or 2; see sim::StressLevels.
 //
 // Common options: --threads T, --wind-max M (m/s at 10 m), --airspeed V, --sink S,
@@ -89,6 +90,7 @@ ScenarioOptions scenarioOptions(const Args& a) {
   o.stress.gps = static_cast<int>(a.integer("gps", 0));
   o.baro2 = a.has("baro2");
   o.gps2 = a.has("gps2");
+  o.bayTau = a.num("bay-tau", 0.0);
   return o;
 }
 

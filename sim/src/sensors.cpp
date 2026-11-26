@@ -88,6 +88,18 @@ double SensorSuite::baroPressure(const World& w, double bias, Rng& rng, int idx)
   double p = isaPressure(s_.padElev + w.height() + hBias);
   p += w.pressureTransient();
   p -= 0.01 * w.dynamicPressure();  // static port error at speed
+  if (s_.bayTau > 0.0) {
+    // Inside the airframe until the parafoil deploys: the bay's air lags.
+    const double t = w.t();
+    const bool inBay = w.deployT() < 0.0 || t < w.deployT();
+    if (bayT_[idx] < 0.0 || !inBay) {
+      bayP_[idx] = p;
+    } else {
+      bayP_[idx] += (p - bayP_[idx]) * (1.0 - std::exp(-(t - bayT_[idx]) / s_.bayTau));
+    }
+    bayT_[idx] = t;
+    p = bayP_[idx];
+  }
   p += bias + rng.normal(0.0, 2.5);
   if (idx == 0 && s_.fault == FaultType::BaroStuck && w.faultActive()) {
     if (!stuckSet_) { stuckP_ = p; stuckSet_ = true; }

@@ -23,6 +23,8 @@ jobs:
         run: ./build/grsim gate2 --runs 1000 --fault-runs 100 --out reports --baseline sim/baseline.json
       - name: Stress - harsher than nominal (fails on early steering or a crash)
         run: ./build/grsim stress --runs 200 --out reports
+      - name: Gate 2 with the pod's bay air lagging 1 s (an under-vented recovery bay)
+        run: ./build/grsim gate2 --runs 500 --fault-runs 0 --bay-tau 1 --out reports/bay_lag
       - name: Gate 3 - deployment detector on synthetic logs
         run: |
           ./build/grsim synth-logs --count 200 --out logs/synthetic
@@ -53,6 +55,27 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ngspice
       - name: Simulate the watchdog against its requirements
         run: hardware/watchdog/run_checks.sh --mc 40
+
+  pod-cad:
+    name: Pod enclosure fit check (OpenSCAD)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install OpenSCAD and mesh tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y openscad
+          pip install trimesh manifold3d numpy
+      - name: Fit check and STLs
+        run: hardware/pod/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pod-stl
+          path: |
+            hardware/pod/build/stl/*.stl
+            hardware/pod/build/fit_report.json
 
   formal:
     name: TLA+ model check and trace validation
@@ -107,7 +130,7 @@ jobs:
     # Publishes https://<owner>.github.io/<repo>/ from main, only after every
     # gate has passed. Pages source: "GitHub Actions" (repo Settings -> Pages).
     if: github.ref == 'refs/heads/main'
-    needs: [software-gates, formal, firmware, watchdog]
+    needs: [software-gates, formal, firmware, watchdog, pod-cad]
     runs-on: ubuntu-latest
     permissions:
       contents: read

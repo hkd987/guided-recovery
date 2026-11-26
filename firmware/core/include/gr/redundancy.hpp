@@ -35,6 +35,7 @@ struct BaroVoterParams {
   float gpsTolM = 12.0f;         // m of height-change mismatch that condemns a lone barometer...
   float gpsTolFrac = 0.15f;      // ...or this share of the change (the standard atmosphere is only a model)
   float gpsTolTime = 3.0f;       // s the mismatch must persist (ejection pressure spikes are shorter)
+  float gpsRecoverTime = 5.0f;   // s a doubted lone barometer must agree again before it is trusted
   float gpsDecideM = 5.0f;       // m by which GPS must favour one barometer to pick it
 };
 
@@ -52,10 +53,13 @@ class BaroVoter {
   bool fresh() const { return fresh_; }          // a fused reading arrived this cycle
   float pressure() const { return fused_; }      // Pa, in barometer 1's frame
   bool trusted() const { return trusted_; }
-  bool failed(int i) const { return failed_[i]; }
+  bool failed(int i) const { return failed_[i] || doubt_[i]; }  // broken, or (alone) out of step with GPS
   bool disagree() const { return disagreeT_ >= p_.disagreeTime; }
   bool present2() const { return present2_; }
   float offset2() const { return off2_; }        // Pa, barometer 2 minus barometer 1 on the pad
+  // The barometers' surroundings just changed (an ejection opened the bay):
+  // compare with GPS only from here on.
+  void restartGpsCompare() { ++gpsSeg_; }
 
   BaroVoterParams p_;
 
@@ -76,7 +80,9 @@ class BaroVoter {
   float raw_[2] = {0.0f, 0.0f};        // latest raw value, for stuck detection
   float changeT_[2] = {-1e9f, -1e9f};  // when the raw value last changed
   float hAtChange_[2] = {0.0f, 0.0f};  // the other source's height then
-  bool failed_[2] = {false, false};    // latched until reset
+  bool failed_[2] = {false, false};    // stuck, or out-voted with GPS's help: latched until reset
+  bool doubt_[2] = {false, false};     // alone and out of step with GPS: until it agrees again
+  float gpsOkT_[2] = {0.0f, 0.0f};     // how long it has agreed with GPS since
   bool offInit_ = false;
   float off2_ = 0.0f;
   float rawLatest_[2] = {0.0f, 0.0f}, rawT_[2] = {-1e9f, -2e9f};

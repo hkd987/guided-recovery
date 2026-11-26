@@ -36,6 +36,7 @@ class SensorSuite {
   uint64_t frame_ = 0;
   sim::V3 accelBias_, gyroBias_;
   double baroBias_ = 0.0, baro2Bias_ = 0.0;
+  double bayP_[2] = {0.0, 0.0}, bayT_[2] = {-1.0, -1.0};  // bay air, as each barometer last saw it
   bool stuckSet_ = false;
   double stuckP_ = 0.0;
   Receiver rx_[2];

@@ -743,3 +743,53 @@ TEST(detector_sense_line_required_mode) {
     CHECK((f.d.stage() == FlightStage::Canopy) == (fire == 1));
   }
 }
+
+// Armed at the prep table, carried to the pad: the home point moves to the
+// pad. One stray fix doesn't move it, and it stays valid throughout.
+TEST(home_relearned_after_carrying_to_the_pad) {
+  FlightCore core;
+  Inputs in;
+  in.imu.valid = true;
+  in.imu.accel = Vec3{0.0f, 0.0f, -kGravity};
+  in.armed = true;
+  in.gps.fixType = 3;
+  in.gps.numSv = 10;
+  in.gps.hAcc = 2.0f;
+  const double lat0 = 45.0, lon0 = -120.0;
+  const double mPerDegLon = 111320.0 * std::cos(lat0 * 3.14159265358979 / 180.0);
+  double north = 0.0, east = 0.0;  // metres from the prep table
+  int i = 0;
+  auto run = [&](double seconds, double vN, double vE, bool stray = false) {
+    const int n = static_cast<int>(seconds * 200.0);
+    for (int k = 0; k < n; ++k, ++i) {
+      in.tUs = static_cast<uint64_t>(i) * 5000ULL;
+      in.baroFresh = (i % 4) == 0;
+      north += vN * 0.005;
+      east += vE * 0.005;
+      in.gps.fresh = (i % 20) == 0;
+      double n2 = north, e2 = east;
+      if (stray && k == 100) n2 += 60.0;  // one multipath jump
+      in.gps.latE7 = static_cast<int32_t>(std::lround((lat0 + n2 / 111320.0) * 1e7));
+      in.gps.lonE7 = static_cast<int32_t>(std::lround((lon0 + e2 / mPerDegLon) * 1e7));
+      in.gps.velN = static_cast<float>(vN);
+      in.gps.velE = static_cast<float>(vE);
+      core.update(in);
+    }
+  };
+  auto homeErr = [&]() {
+    const Status& st = core.status();
+    const double dN = (st.homeLat - lat0) * 111320.0 - north;
+    const double dE = (st.homeLon - lon0) * mPerDegLon - east;
+    return std::sqrt(dN * dN + dE * dE);
+  };
+  run(30.0, 0.0, 0.0);              // armed and waiting at the prep table
+  CHECK(core.status().phase == Phase::Pad && core.status().homeValid);
+  CHECK(homeErr() < 1.0);
+  run(5.0, 0.0, 0.0, true);         // one stray fix 60 m away
+  CHECK(homeErr() < 1.0);
+  run(150.0, 1.4, 0.4);             // walk ~220 m to the pad (moving fixes are ignored)
+  CHECK(core.status().homeValid);   // the old home stays until a new one is ready
+  run(20.0, 0.0, 0.0);              // on the rail
+  CHECK(core.status().homeValid);
+  CHECK(homeErr() < 2.0);
+}

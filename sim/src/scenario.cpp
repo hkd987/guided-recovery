@@ -175,6 +175,7 @@ Scenario makeScenario(uint64_t seed, const ScenarioOptions& o) {
   {
     Rng rk(seed * 0x94D049BB133111EBULL + 0xB4C0ULL);
     s.baro2 = o.baro2;
+    s.bayTau = o.bayTau;
     s.gps2 = o.gps2;
     s.baro2Bias = rk.normal(0.0, 50.0);
     if (o.fault == FaultType::BaroDrift) s.faultMagnitude = rk.uniform(3.0, 6.0) * (rk.chance(0.5) ? 1.0 : -1.0);
