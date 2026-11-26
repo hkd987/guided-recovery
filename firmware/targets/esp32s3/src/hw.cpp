@@ -33,6 +33,7 @@ bool gpsBegin(uint32_t timeoutMs) {
   static const uint32_t bauds[] = {115200, 38400, 9600, 57600, 230400};
   uint8_t cfg[256];
   const size_t n = gr::ubx::buildPodConfig(115200, cfg, sizeof cfg);
+  gpsSerial.setRxBufferSize(1024);  // NAV-PVT is 100 bytes; keep several in hand
   const uint32_t t0 = millis();
   while (millis() - t0 < timeoutMs) {
     for (uint32_t b : bauds) {

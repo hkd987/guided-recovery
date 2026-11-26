@@ -145,6 +145,16 @@ void selftest() {
   }
   appBenchRelease();
 
+  // Control loop timing (the flight task must finish each cycle in 5 ms).
+  appSnapshot(s);
+  {
+    char msg[96];
+    snprintf(msg, sizeof msg, "control loop: worst cycle %lu us, %lu overruns of 5 ms",
+             static_cast<unsigned long>(s.maxLoopUs), static_cast<unsigned long>(s.overruns));
+    if (s.maxLoopUs >= 5000 || s.overruns > 0) warn(msg);
+    else pass(msg);
+  }
+
   Serial.printf("Self-test: %d failed, %d warnings. %s\n", fails, warns,
                 fails ? "Fix the failures before flying." : "Ready for bench and drop testing.");
 }
