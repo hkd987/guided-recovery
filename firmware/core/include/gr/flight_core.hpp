@@ -73,6 +73,7 @@ class FlightCore {
   const Outputs& update(const Inputs& in);
 
   const Status& status() const { return st_; }
+  const PhaseDetector& detector() const { return det_; }
   const Params& params() const { return p_; }
 
   // Log record at Params::logRateHz; returns true when one is ready.

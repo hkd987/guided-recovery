@@ -72,6 +72,43 @@ TEST(sitl_gps_loss_ends_in_spiral) {
   CHECK(exercised > 0);
 }
 
+// AltosUI writes its CSV header as a comment line ("#version,serial,...").
+TEST(reads_altosui_csv_header_and_units) {
+  const char* path = "/tmp/gr_test_altos.csv";
+  {
+    std::FILE* f = std::fopen(path, "w");
+    std::fprintf(f, "#version,serial,flight,call,time,state,state_name,acceleration,pressure,altitude,height,"
+                    "accel_x,accel_y,accel_z\n");
+    for (int i = 0; i < 40; ++i) {
+      const double t = -0.3 + 0.1 * i;
+      const char* st = t < 1.0 ? "boost" : t < 2.5 ? "drogue" : "main";
+      std::fprintf(f, "6, 1234, 2,N0CALL, %6.2f, 3, %8s, %6.2f, %9.2f, 200.0, %6.2f, -9.70, 0.20, 0.30\n", t, st,
+                   0.0, 98000.0 - 10.0 * i, 0.8 * i);
+    }
+    std::fclose(f);
+  }
+  FlightLog log;
+  std::string err;
+  CHECK(readFlightCsv(path, log, &err));
+  CHECK(log.samples.size() == 40u);
+  CHECK_NEAR(log.mainT, 2.5, 0.051);
+  CHECK(log.accelSource == "3-axis");
+  CHECK_NEAR(log.samples[5].lat1, 0.2, 1e-9);  // x carries gravity: y, z are cross-axis
+  CHECK_NEAR(log.samples[5].pressure, 97950.0, 1e-6);
+
+  // Units in the header, no callsign column and no IMU (EasyMini style).
+  {
+    std::FILE* f = std::fopen(path, "w");
+    std::fprintf(f, "# Altus Metrum flight log\n#version,serial,flight,time (s),state,state_name,"
+                    "acceleration (m/s^2),pressure (hPa),height (ft)\n");
+    for (int i = 0; i < 20; ++i) std::fprintf(f, "6,1,1,%.2f,3,boost,1.0,980.0,%d\n", 0.1 * i, i);
+    std::fclose(f);
+  }
+  CHECK(readFlightCsv(path, log, &err));
+  CHECK(log.accelSource == "baro-derived");
+  CHECK_NEAR(log.samples[0].pressure, 98000.0, 1e-6);
+}
+
 TEST(synthetic_log_roundtrip_and_replay) {
   FlightLog log = synthesizeLog(5);
   CHECK(log.samples.size() > 100);

@@ -88,6 +88,30 @@ def summary_rows(s):
     return "".join(f"<tr><td>{html.escape(str(a))}</td><td>{html.escape(str(b))}</td></tr>" for a, b in rows)
 
 
+def gate3_section(title, rows, badge):
+    """Gate 3 outcome table for one set of logs (grreplay --out CSV)."""
+    if not rows:
+        return f"<h2>Gate 3: {html.escape(title)}</h2><p>not run</p>"
+    def n(pred):
+        return sum(1 for r in rows if pred(r))
+    canopy = n(lambda r: r.get("outcome") == "canopy")
+    confirmed = n(lambda r: r.get("outcome") == "canopy" and r["detected"] == "1" and r["missed"] == "0"
+                  and r["false_trigger"] == "0")
+    false_t = n(lambda r: r["false_trigger"] == "1" and not (r.get("slow_drogue") == "1" and r.get("main_alt") == "0"))
+    implausible = n(lambda r: r.get("implausible") == "1")
+    missed = n(lambda r: r["missed"] == "1")
+    ok = false_t == 0 and implausible == 0 and missed == 0
+    rows_html = "".join(f"<tr><td>{a}</td><td>{b}</td></tr>" for a, b in [
+        ("logs", len(rows)),
+        ("canopy after the main (must confirm)", f"{confirmed}/{canopy} confirmed"),
+        ("at a band edge (optional)", n(lambda r: r.get("outcome") == "borderline")),
+        ("fast or failed main (optional)", n(lambda r: r.get("outcome") == "fast-or-failed")),
+        ("settled below 30 m", n(lambda r: r.get("outcome") == "too-low")),
+        ("confirmed before the main", false_t),
+        ("confirmed while falling too fast", implausible)])
+    return f"<h2>Gate 3: {html.escape(title)} {badge(ok)}</h2><table>{rows_html}</table>"
+
+
 def main():
     src = sys.argv[1] if len(sys.argv) > 1 else "reports"
     out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(src, "index.html")
@@ -105,10 +129,7 @@ def main():
             faults += (f"<tr><td>{html.escape(name)}</td><td>{f['runs']}</td><td>{f['exercised']}</td>"
                        f"<td>{f['met']}/{f['exercised']}</td></tr>")
     misses = [float(r["miss"]) for r in runs2 if r.get("fault") == "none" and r.get("landed") == "1"]
-    g3_main = [r for r in g3 if r["has_main"] == "1"]
-    g3_det = sum(1 for r in g3_main if r["detected"] == "1" and r["missed"] == "0" and r["false_trigger"] == "0")
-    g3_false = sum(1 for r in g3 if r["false_trigger"] == "1")
-    g3_ok = bool(g3) and g3_false == 0 and g3_det == len(g3_main)
+    g3real = load_csv(os.path.join(src, "gate3_real.csv"))
 
     doc = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Gate Report</title>
@@ -133,9 +154,8 @@ table {{ border-collapse:collapse; margin:8px 0 20px; }} td,th {{ padding:4px 12
         if g2.get("failures"):
             doc += "<p class='fail'>" + "<br>".join(html.escape(f) for f in g2["failures"]) + "</p>"
         doc += '<div class="row">' + scatter_svg(runs2) + hist_svg(misses, [0, 5, 10, 15, 20, 30, 50, 100, 200]) + "</div>"
-    doc += f"<h2>Gate 3: log replay {badge(g3_ok)}</h2>"
-    doc += (f"<p>{len(g3)} logs, {len(g3_main)} with a main deployment: {g3_det} detected, "
-            f"{g3_false} false triggers.</p>" if g3 else "<p>not run</p>")
+    for title, rows in (("synthetic logs", g3), ("real flight logs", g3real)):
+        doc += gate3_section(title, rows, badge)
     doc += "</body></html>"
     with open(out, "w") as f:
         f.write(doc)

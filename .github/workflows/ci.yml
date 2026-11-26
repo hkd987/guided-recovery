@@ -21,11 +21,16 @@ jobs:
         run: ./build/grsim gate1 --runs 1000 --out reports
       - name: Gate 2 - software in the loop, with faults and accuracy regression check
         run: ./build/grsim gate2 --runs 1000 --fault-runs 100 --out reports --baseline sim/baseline.json
-      - name: Gate 3 - deployment detector on flight logs
+      - name: Gate 3 - deployment detector on synthetic logs
         run: |
           ./build/grsim synth-logs --count 200 --out logs/synthetic
+          ./build/grreplay --main-alt log --min-flights 100 --out reports/gate3.csv logs/synthetic/*.csv
+      - name: Gate 3 - deployment detector on real flight logs
+        run: |
+          tools/fetch_public_logs.sh build/public-logs
           shopt -s nullglob
-          ./build/grreplay --min-flights 100 --out reports/gate3.csv logs/synthetic/*.csv logs/real/*.csv
+          ./build/grreplay --main-alt log --min-flights 50 --out reports/gate3_real.csv \
+            logs/real/*.csv build/public-logs/*.csv
       - name: Gate 4 harness self-test (stand-in board over a socket)
         run: ./build/grhil --loopback --flights 20 --out reports/gate4_loopback.json
       - name: Report

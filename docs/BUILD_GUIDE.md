@@ -79,6 +79,20 @@ set radio.mhz 868
 save
 ```
 
+**Dual deploy:** tell the pod the main altitude you set on your flight
+computer (in metres above the pad). The default, 0, means single deploy: the
+parafoil comes out at apogee.
+
+```
+set canopy.mainalt 150
+save
+```
+
+Nothing above that altitude counts as the canopy opening. Without it, a
+drogue that falls slower than about 9 m/s looks exactly like a parafoil and
+the pod would start steering while the parafoil is still packed. Use a drogue
+that falls faster than 12 m/s anyway.
+
 ## 4. Bench setup and self-test
 
 Put the magnet on (disarmed = bench mode), stand the pod upright, and type:

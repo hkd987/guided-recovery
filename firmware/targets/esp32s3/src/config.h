@@ -29,6 +29,9 @@ struct PodSettings {
   int8_t radioDbm = 14;
   // Battery divider calibration
   float batteryScale = 1.0f;
+  // Dual deploy: the main altitude set on the host flight computer (m AGL).
+  // 0 = single deploy (parafoil out at apogee). Appended in settings v3.
+  float mainAltM = 0.0f;
 };
 
 extern PodSettings g_settings;

@@ -2,8 +2,11 @@
 
 **Bottom line.** In simulation, the pod design works. The real flight code,
 fed by realistic sensor and motor models, lands the S pod within 30 m of the
-pad in **94.5%** of 1,000 randomized flights in winds up to 10 mph. The spec's
+pad in **94.2%** of 1,000 randomized flights in winds up to 10 mph. The spec's
 gate 2 pass mark is 85%. Every injected fault ends the way the spec requires.
+The deployment detector also passes on **69 real flight logs** from 12 rocketry
+teams: it confirmed every canopy and never confirmed one before the main came
+out (gate 3, below).
 
 The parts are buyable today for about **$191**, and the firmware compiles for
 the Heltec V3. What simulation cannot settle is the physics. That's the job
@@ -20,17 +23,17 @@ of gates 4–6:
 
 | | Gate 1 (guidance, truth) | Gate 2 (flight core in the loop) |
 |---|---|---|
-| Within 30 m | **97.8%** | **94.5%** (drop 3.3 points; allowed 5) |
-| Median miss | 1.9 m | 6.1 m |
-| 90th percentile | 11.8 m | 23.1 m |
+| Within 30 m | **97.8%** | **94.2%** (drop 3.6 points; allowed 5) |
+| Median miss | 1.9 m | 6.0 m |
+| 90th percentile | 11.8 m | 23.3 m |
 | Steering before canopy confirmed | 0 | **0** |
 | Crashes / non-finite outputs | 0 | **0** |
-| Canopy confirmed after opening | — | mean 3.8 s, max 6.2 s |
+| Canopy confirmed after opening | — | mean 4.5 s, max 6.6 s |
 
 | Injected fault (gate 2) | Expected | Result |
 |---|---|---|
 | GPS loss | spiral within 5 s | 99/99 |
-| Stalled winch | spiral within 15 s | 90/90 |
+| Stalled winch | spiral within 15 s | 89/89 |
 | Lopsided canopy (needs 50–80% brake to fly straight) | spiral within 25 s | 71/71 |
 | Gust (+3–6 m/s for 6 s) | still lands | 97/97 |
 | Low-level wind shear (direction swings 90–180°) | still lands | 100/100 |
@@ -45,30 +48,66 @@ Checks for overfitting to batch 1.
 | Measure | Result |
 |---|---|
 | Gate 1 | 96.4% within 30 m |
-| Gate 2 | **93.3%** within 30 m |
-| Faults | all exercised faults met their expected outcome: GPS loss 98/98, stalled winch 89/89, lopsided canopy 75/75, gust 100/100, shear 100/100 |
+| Gate 2 | **93.0%** within 30 m |
+| Faults | all exercised faults met their expected outcome: GPS loss 98/98, stalled winch 90/90, lopsided canopy 75/75, gust 100/100, shear 100/100 |
 | False fallbacks | 0 |
 
-### Gate 3: log replay
+A longer run (400 faults of each kind) finds a small tail that batches of 100
+can miss: 3 of 314 lopsided canopies are never flagged (the pod keeps guiding
+to the end, compensating with trim) and 1 of 353 stalled winches is caught
+late (29–43 s instead of 15 s). The build before this change shows the same
+tail on the same seeds, so it is an open item rather than a regression.
 
-The replay harness passes on 200 synthetic host logs: single and dual deploy,
-round mains and parafoils at 3–8 m/s descent, and 9 main failures that must
-*not* trigger.
+### Gate 3: log replay on real flights
 
-| Measure | Result |
+69 real AltOS flight logs replay through the detector on every CI run: 3 are
+stored in `logs/real/` (MIT), 66 are fetched from public GitHub repositories
+at pinned commits (`logs/public/`). They span TeleMega, TeleMetrum, EasyMega
+and EasyMini flight computers, 40 m to 8.3 km apogee, single and dual deploy,
+and include failed, late and tangled mains.
+
+Each log is first judged offline, with hindsight, from its own barometer.
+After the main came out, did the descent settle into the canopy band
+(1.5–9 m/s, median over 20 s)? If so, the pod must confirm the canopy within
+10 s of it settling (15 s for logs with no accelerometer). Mains that never
+slowed that much, flights that settled below 30 m, and descents within
+0.5 m/s of a band edge are not scored. The pod may confirm or not on those,
+but never before the main, and never while falling at twice the top of the
+band.
+
+| Measure (real logs, `--main-alt log`) | Result |
 |---|---|
-| Main deployments detected | **191/191** |
-| False triggers | **0** |
-| Detection delay after the main fires | mean 5.5 s, max 8.1 s |
+| Canopies the pod had to confirm | **43/43** confirmed |
+| Confirmed before the main came out | **0** |
+| Confirmed while falling too fast for a canopy | **0** |
+| Not scored: fast or failed main / below 30 m / at a band edge | 16 / 3 / 3 (confirmed anyway: 1, 0, 2) |
+| Confirmation delay after the descent settled | mean 4.8 s, max 11.7 s |
+| Same, after the host fired the main | mean 9.3 s, max 17.3 s |
 
-**This is weak evidence.** The synthetic logs come from the same simulator.
-The spec asks for 100+ real flights, and none could be fetched here:
-- Altus Metrum has no central public archive.
-- Its one log repository (git.gag.com/fw/tmflights) was blocked from this environment.
-- AltOS's own test suite lists about 80 flights, but their data files aren't distributed.
+Synthetic logs (200, same simulator as gate 2): 188/188 canopies confirmed,
+0 false triggers, mean 3.0 s after settling.
 
-CI replays any CSV dropped into `logs/real/` (format in its README).
-Collecting real logs is the most valuable next software task.
+**What the real logs changed.** The first run on real logs looked nothing
+like the synthetic one. Only 3 of 68 logs were even readable, and once they
+were, 32 of 47 canopies were confirmed (at the scoring rules used then), with
+2 false triggers. Three detector fixes and one harness fix followed
+(items 12–15 below).
+
+**Still short of the spec.** Primary and backup computers in one rocket count
+as two logs, so the 69 logs cover about 50 distinct flights; the spec asks for
+100+. The flights also descended under round parachutes, not parafoils:
+the logs test boost, coast, drogue, ejection shocks, pressure spikes and
+opening dynamics, but the steady descent after opening is a round chute's.
+And the host computer sits in the airframe, while the pod rides on the
+harness. From gate 5 on, the pod's own logs replace both.
+
+**Dual deploy needs one setting.** Three logs have drogues that fell at
+5–10 m/s, inside the canopy band. By descent rate alone no detector can tell
+that drogue from a canopy, and without the setting the pod confirms under the
+drogue. With `set canopy.mainalt <your main altitude>`, nothing above that
+altitude (plus max(15 m, 10%)) counts as canopy evidence: all three pass.
+Builders flying dual deploy must set it, and should use a drogue that falls
+faster than 12 m/s.
 
 ## What size parafoil? (canopy sweep)
 
@@ -108,7 +147,8 @@ What the sweep says:
 
 Items 1–8 were each found by a failing Monte Carlo run, traced in a
 single-flight replay, and fixed. Items 9–11 came from the TLA+ model, the
-gate-4 harness and code review. This is the point of software-first testing.
+gate-4 harness and code review. Items 12–15 came from replaying real flight
+logs. This is the point of software-first testing.
 
 1. **Steering on GPS course fails when wind aloft beats the canopy.** At 700 m
    with 9–10 m/s of wind, the pod circled. Fix: heading is now derived with no
@@ -155,6 +195,26 @@ gate-4 harness and code review. This is the point of software-first testing.
 
     The TLA+ model includes restarts at any point (property
     `NoSteeringAfterCanopyRestart`).
+12. **Real AltosUI exports were unreadable** (found by real logs). AltosUI
+    writes its CSV header as a comment line (`#version,serial,...`), and the
+    reader skipped comment lines, so 65 of 68 real logs were thrown away.
+    Fix: a `#` line that names a time column is the header. Units in the
+    header (`height (ft)`) are now converted too.
+13. **A real canopy never looks steady** (found by real logs). For 10–15 s
+    after opening, the descent rate swings between about 1 and 10 m/s
+    (pendulum swing, riser bounce). The detector asked for the filtered rate
+    to stay within 2.5 m/s for 3 s, so it kept restarting and confirmed late
+    or never. The simulator's canopy is smooth, so 191/191 synthetic logs had
+    passed. Fix: judge the mean descent over the last 3 s (from the altitude
+    history), and confirm 2.5 s after a jolt (7 s without one).
+14. **A slow drogue passes for a canopy** (found by real logs). Drogues
+    falling at 5–10 m/s are inside the canopy band. Fix: the
+    `canopy.mainalt` setting. Above the main altitude no descent and no jolt
+    counts, so only the main coming out (and what follows) can confirm.
+15. **The harness misread the main altitude** (found by real logs). At the
+    instant the main charge fires, the bay's pressure spikes: one log read
+    32 m when the rocket was at 180 m. Fix: take the median of the second
+    before the main fires.
 
 ## Not proven yet
 
@@ -163,6 +223,7 @@ gate-4 harness and code review. This is the point of software-first testing.
 | Gate 4 (HIL) | Harness built and passing with a stand-in board: 20 flights, every frame answered, under 1 ms per frame on the PC. The serial path was also tested in real time over a pseudo-terminal. Needs a real board and winches on the bench |
 | Gate 5 (ground deploy) and the spec's first open question: does a parafoil open cleanly after a hard ejection? | Simulation assumes it opens in 0.8–2.5 s |
 | Gate 6 (drop tests) | The canopy model is the spec's "simple model" and needs fitting to real turn, glide and sink data. Every result above assumes canopies within about ±6% airspeed/sink and ±15% turn gain of the tested design |
+| Gate 3 on 100+ real flights | 69 real logs, about 50 distinct flights, all passing. Need about 50 more; all are round-parachute flights logged in the airframe, not by the pod |
 | Pod-mounted IMU vs. airframe logs (spec open question) | Replay proves the logic, not the thresholds |
 | Firmware on hardware | Drivers are written from datasheets: BMI088, LSM6DSO32, BMP390, ADXL375, u-blox M10 UBX, PCNT encoders, DRV8833, SX1262. They compile but have not run. Bench-check each with `selftest` |
 | Heltec V4 | Not supported (different pin map) |
@@ -175,3 +236,4 @@ gate-4 harness and code review. This is the point of software-first testing.
   from. Keep apogee modest, or dual-deploy with the main at 150–250 m.
 - **Low deployments far downwind can't make it back.** The pod lands short,
   but on the right line.
+- **Dual deploy with a slow drogue needs `canopy.mainalt`.** See gate 3.

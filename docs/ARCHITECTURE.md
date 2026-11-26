@@ -34,7 +34,7 @@ That's the spec's "thin hardware layer" pattern, as used by ArduPilot's SITL.
 | | `AttitudeFilter` | Gravity direction only (Mahony). Turns gyro rates into turn rate about the vertical. The accelerometer is ignored between launch and canopy |
 | | `GeoOrigin` | GPS → metres from home |
 | | `WindEstimator` | Least-squares circle fit of GPS ground velocity while turning: centre = wind, radius = airspeed. Refined on straight legs. No compass |
-| Detect | `PhaseDetector` | Launch (accel + baro confirm), burnout, apogee, **canopy confirmed** (jolt + steady 1.5–9 m/s descent for 3 s, or 8 s without a jolt), landed |
+| Detect | `PhaseDetector` | Launch (accel + baro confirm), burnout, apogee, **canopy confirmed** (mean descent over the last 3 s within 1.5–9 m/s for 2.5 s after a jolt, or 7 s without one; with `canopy.mainalt` set, only below the main altitude and only a jolt below it counts), landed |
 | Guide | `Guidance` | Homing → Loiter (orbit home to burn height) → Final (turn in when the straight glide uses the remaining height; trim with symmetric brake; S-turns if high) → Flare |
 | Steer | `Steering` | Turn-rate PI with feedforward. A Kalman filter learns canopy turn gain and bias → lopsided detection |
 | Actuate | `WinchController` | Position loop per winch, 6 V cap on a 2S pack, stall / wrong-way detection, idle exercise |

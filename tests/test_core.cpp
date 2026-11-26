@@ -193,6 +193,84 @@ TEST(detector_drogue_never_confirms_then_main_does) {
   CHECK(d.canopyTime() - d.lastJoltTime() < 5.0f);
 }
 
+namespace {
+// Pad, boost and coast to an apogee near 225 m; returns the time.
+struct DetFlight {
+  PhaseDetector d;
+  float t = 0.0f, h = 0.0f;
+  explicit DetFlight(const DetectorParams& p) : d(p) { d.reset(); }
+  void step(float g, float climb, float dt = 0.005f) {
+    h += climb * dt;
+    d.update(di(t, g, h, climb), dt);
+    t += dt;
+  }
+  void toApogee() {
+    for (int i = 0; i < 400; ++i) step(1.0f, 0.0f);
+    for (int i = 0; i < 300; ++i) step(8.0f, 60.0f * i / 300.0f);
+    for (int i = 0; i < 1200; ++i) step(0.3f, 60.0f - 60.0f * i / 1200.0f);
+    step(30.0f, 0.0f);  // apogee charge
+  }
+};
+}  // namespace
+
+// Real logs: after a canopy opens the descent rate swings between ~1 and
+// ~10 m/s for 10-15 s. The detector judges the mean, so it still confirms.
+TEST(detector_confirms_through_canopy_swing) {
+  DetectorParams p;
+  DetFlight f(p);
+  f.toApogee();
+  for (int i = 0; i < 2000; ++i) f.step(1.0f, -20.0f);  // 10 s on a drogue
+  CHECK(f.d.stage() == FlightStage::Descent);
+  f.step(8.0f, -12.0f);  // main opening
+  const float t0 = f.t;
+  while (f.t - t0 < 12.0f && f.d.stage() == FlightStage::Descent) {
+    const float swing = 4.5f * std::sin(2.0f * 3.14159265f * (f.t - t0) / 5.0f);
+    f.step(1.0f + 0.3f * swing / 4.5f, -(5.5f + swing));
+  }
+  CHECK(f.d.stage() == FlightStage::Canopy);
+  CHECK(f.d.canopyTime() - t0 >= 2.5f);  // never faster than the window allows
+  CHECK(f.d.canopyTime() - t0 < 8.0f);
+}
+
+// A drogue falling at canopy speed can't be told from a canopy by descent
+// rate. With canopy.mainAlt set, nothing above the main altitude counts.
+TEST(detector_slow_drogue_needs_main_alt) {
+  for (int withMainAlt = 0; withMainAlt < 2; ++withMainAlt) {
+    DetectorParams p;
+    p.mainAlt = withMainAlt ? 120.0f : 0.0f;
+    DetFlight f(p);
+    f.toApogee();
+    bool confirmedHigh = false;
+    while (f.h > 120.0f) {  // slow drogue: 8 m/s, swinging a little
+      f.step(1.0f + 0.4f * std::sin(f.t * 3.0f), -8.0f);
+      confirmedHigh = confirmedHigh || f.d.stage() == FlightStage::Canopy;
+    }
+    if (!withMainAlt) {
+      CHECK(confirmedHigh);  // the documented limitation without the setting
+      continue;
+    }
+    CHECK(!confirmedHigh);
+    f.step(6.0f, -8.0f);  // main comes out at 120 m: the pod is yanked out
+    const float t0 = f.t;
+    while (f.t - t0 < 10.0f && f.d.stage() == FlightStage::Descent) f.step(1.0f, -5.0f);
+    CHECK(f.d.stage() == FlightStage::Canopy);
+    CHECK(f.d.canopyTime() - t0 < 6.0f);
+  }
+}
+
+// Drogue at 15 m/s with the mean dipping as the rocket swings: never a canopy.
+TEST(detector_ignores_swinging_fast_drogue) {
+  DetectorParams p;
+  DetFlight f(p);
+  f.toApogee();
+  for (int i = 0; i < 8000; ++i) {
+    const float swing = 6.0f * std::sin(i * 0.005f * 2.0f * 3.14159265f / 4.0f);
+    f.step(1.0f + 0.5f * std::fabs(swing) / 6.0f, -(15.0f + swing));
+    if (f.h < 50.0f) break;
+  }
+  CHECK(f.d.stage() == FlightStage::Descent);
+}
+
 TEST(records_fixed_size_and_checksum) {
   LogRecord r;
   r.tMs = 1234;

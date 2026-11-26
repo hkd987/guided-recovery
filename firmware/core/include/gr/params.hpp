@@ -35,10 +35,16 @@ struct DetectorParams {
   float joltWindow = 20.0f;    // s a jolt stays valid as evidence
   float bandLow = 1.5f;        // m/s descent: parafoil band
   float bandHigh = 9.0f;
-  float steadySpread = 2.5f;   // m/s, max minus min descent rate within the streak
-  float confirmTime = 3.0f;    // s of steady in-band descent after a jolt
-  float confirmTimeNoJolt = 8.0f;  // s of steady in-band descent with no jolt seen
+  float steadyWindow = 3.0f;   // s; the descent rate judged is the mean over this window
+  float steadySpread = 4.0f;   // m/s, max minus min of that mean within the streak
+  float confirmTime = 2.5f;    // s of steady in-band descent after a jolt
+  float confirmTimeNoJolt = 7.0f;  // s of steady in-band descent with no jolt seen
   float minGuidedAlt = 25.0f;  // m AGL; confirmed lower than this means brakes stay released
+  // Dual deploy: the main altitude set on the host flight computer. Above it
+  // (plus max(15 m, 10%) for the two barometers disagreeing) nothing counts
+  // as canopy evidence, so a slow drogue cannot pass for the canopy.
+  // 0 = single deploy / not set (parafoil out at apogee).
+  float mainAlt = 0.0f;  // m AGL
   // Landing.
   float landedClimb = 0.6f;    // |m/s|
   float landedTime = 4.0f;

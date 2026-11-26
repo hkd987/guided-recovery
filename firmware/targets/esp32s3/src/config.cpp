@@ -2,11 +2,15 @@
 
 #include <Preferences.h>
 
+#include <cstddef>
+
 PodSettings g_settings;
 
 namespace {
 const char* kNs = "grpod";
-const uint32_t kVersion = 2;
+const uint32_t kVersion = 3;
+// v2 is v3 without the trailing mainAltM: load it as a prefix.
+const size_t kV2Size = offsetof(PodSettings, mainAltM);
 
 String axisString() {
   String s;
@@ -43,8 +47,12 @@ bool parseAxis(const String& v) {
 void settingsLoad() {
   Preferences p;
   if (!p.begin(kNs, true)) return;
-  if (p.getUInt("ver", 0) == kVersion && p.getBytesLength("blob") == sizeof(PodSettings)) {
+  const uint32_t ver = p.getUInt("ver", 0);
+  const size_t len = p.getBytesLength("blob");
+  if (ver == kVersion && len == sizeof(PodSettings)) {
     p.getBytes("blob", &g_settings, sizeof(PodSettings));
+  } else if (ver == 2 && len == kV2Size) {
+    p.getBytes("blob", &g_settings, kV2Size);  // newer fields keep their defaults
   }
   p.end();
 }
@@ -70,12 +78,15 @@ gr::Params settingsToParams() {
   p.winch.direction[0] = g_settings.winchDirL;
   p.winch.direction[1] = g_settings.winchDirR;
   p.safety.fenceRadius = g_settings.fenceRadius;
+  p.det.mainAlt = g_settings.mainAltM;
   return p;
 }
 
 void settingsPrint(Print& out) {
   out.printf("canopy.airspeed  %.2f m/s\n", g_settings.canopyAirspeed);
   out.printf("canopy.sink      %.2f m/s\n", g_settings.canopySink);
+  out.printf("canopy.mainalt   %.0f m%s\n", g_settings.mainAltM,
+             g_settings.mainAltM > 0.0f ? " (dual deploy)" : " (0: single deploy, parafoil out at apogee)");
   out.printf("canopy.turngain  %.3f rad/s per unit brake\n", g_settings.canopyTurnGain);
   out.printf("winch.travel     %.1f mm\n", g_settings.winchTravelMm);
   out.printf("winch.cpmm       %.3f counts/mm\n", g_settings.winchCountsPerMm);
@@ -99,6 +110,7 @@ bool settingsSet(const String& name, const String& value, String& err) {
   };
   if (name == "canopy.airspeed") { if (!range(3, 16)) return false; g_settings.canopyAirspeed = f; }
   else if (name == "canopy.sink") { if (!range(1, 9)) return false; g_settings.canopySink = f; }
+  else if (name == "canopy.mainalt") { if (!range(0, 3000)) return false; g_settings.mainAltM = f; }
   else if (name == "canopy.turngain") { if (!range(0.2f, 2.0f)) return false; g_settings.canopyTurnGain = f; }
   else if (name == "winch.travel") { if (!range(20, 300)) return false; g_settings.winchTravelMm = f; }
   else if (name == "winch.cpmm") { if (!range(1, 500)) return false; g_settings.winchCountsPerMm = f; }

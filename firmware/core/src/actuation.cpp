@@ -58,8 +58,10 @@ BrakeCmd Steering::update(float rCmd, float sym, float yawRateMeas, float actual
   accR_ += r;
   accT_ += dt;
   ++accN_;
-  if (sinceReset_ < 0.5f * s_.lopsidedSettle) {
-    accD_ = accR_ = accT_ = 0.0f;  // let the swing after opening die down first
+  if (sinceReset_ < 0.75f * s_.lopsidedSettle) {
+    // Let the swing after opening die down first. Canopy confirmation can
+    // now come within ~3 s of the opening (mean-descent test), so wait 4.5 s.
+    accD_ = accR_ = accT_ = 0.0f;
     accN_ = 0;
   } else if (accT_ >= 0.05f) {
     const float dm = accD_ / accN_, rm = accR_ / accN_, h = accT_;

@@ -6,6 +6,11 @@
 //   2. ignore drogue descent (fast fall that never slows to parafoil speed),
 //   3. look for an opening jolt, then a steady descent in the parafoil band,
 //   4. only then may steering arm.
+//
+// "Steady" is judged on the mean descent rate over the last few seconds (from
+// the altitude history), not the instantaneous rate: real logs show the rate
+// swinging between about 1 and 10 m/s for 10-15 s after a canopy opens
+// (pendulum swing, riser bounce), around a perfectly steady mean.
 #pragma once
 
 #include "gr/math.hpp"
@@ -47,9 +52,13 @@ class PhaseDetector {
   float lastJoltTime() const { return lastJoltT_; }
   float steadyFor() const { return streakActive_ ? (lastT_ - streakStart_) : 0.0f; }
   float smoothedDescent() const { return descent_.value(); }
+  // Mean descent rate over the last steadyWindow seconds (m/s, down positive);
+  // false until the window has filled since apogee.
+  bool meanDescent(float& rate) const;
 
  private:
   void resetStreak(float t, float d);
+  void pushAltitude(float agl, float dt);
   // Forget everything about the last flight. Called on every disarm, so each
   // arming starts fresh (found by the TLA+ model: DisarmedMeansNoLaunchPending).
   void clearFlight();
@@ -74,6 +83,13 @@ class PhaseDetector {
   float streakMin_ = 0.0f, streakMax_ = 0.0f;
   float landedT_ = 0.0f;
   float lastT_ = 0.0f;
+  // Altitude history at 10 Hz for the mean descent rate.
+  static constexpr int kHist = 64;  // 6.4 s
+  static constexpr float kHistDt = 0.1f;
+  float hist_[kHist] = {};
+  int histHead_ = 0, histCount_ = 0;
+  float histAcc_ = 0.0f;
+  float belowMainT_ = -1.0f;  // dual deploy: first time below the main altitude band
 };
 
 }  // namespace gr
