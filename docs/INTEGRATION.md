@@ -14,6 +14,8 @@ they are. This guide covers what does change:
 5. [The optional "main fired" wire](#5-optional-the-main-fired-wire),
    flight computer by flight computer.
 6. [Checks at the pad](#6-checks-at-the-pad).
+7. [Reference rockets](#7-reference-rockets): kits that fit, and the two the
+   test flights use.
 
 Fly the test gates first (bench, ground deploys, drops, low power; see
 [BUILD_GUIDE.md](BUILD_GUIDE.md#7-before-the-first-flight)), and fly under
@@ -244,3 +246,63 @@ In addition to the build guide's pad steps:
 3. The vent hole beside the pod is open (not taped over).
 4. If the "main fired" wire is fitted: your flight computer's continuity
    report for that channel is what you saw on the bench.
+
+## 7. Reference rockets
+
+The test flights (gates 7 and 8) use two standard kits, so every result
+applies directly to anyone who builds the same kit. Any kit that meets these
+limits should work:
+
+- **Bay inside diameter at least 64.8 mm** (the pod is 62 mm across):
+  2.6 in, 3 in or 4 in tubes.
+- **Cardboard, Blue Tube, phenolic or fiberglass** around the pod; not carbon
+  fiber or metal.
+- **Liftoff mass under about 1.5 kg** with the pod (about 220 g), the
+  parafoil (about 150 g, an estimate until the canopy is chosen) and the
+  motor. In practice: a kit under about 0.9 kg empty.
+- **About 300–380 mm (12–15 in) of clear bay** for the pod, the bagged
+  parafoil, the shock cord and the Nomex. This is an estimate; ground
+  deployment tests (gate 5) will settle it.
+
+### The picks
+
+| Kit | Bay inside diameter | Kit mass | Liftoff, estimated | Motors | Role |
+|---|---|---|---|---|---|
+| **AeroTech HV Arcas** (89012) | 2.6 in (65.0 mm) | 22 oz (620 g) | ≈ 1.1 kg | 29 mm, E–G | **First flights (gate 7):** a long body gives a roomy single-deploy bay on motor ejection; no certification needed on G motors under 1.5 kg |
+| **Apogee Mako** | 3 in thin-wall kraft (74.4 mm) | 15.9 oz (452 g) | 0.9–1.0 kg; 1.1–1.25 kg as dual deploy | 29 mm, G–H | **Level 1 flights (gate 8):** the lightest 3 in kit, with an Apogee-documented dual-deploy conversion (74 mm bay kit; fit the 38 mm upgrade during the build if you want it) |
+| Madcow 2.6" DX3 (K-3126) | 2.6 in (65.0 mm) | 15 oz (425 g) | ≈ 1.0 kg; 1.05–1.15 kg as dual deploy | 29 mm | Its long payload section is sold as the way to dual deploy (Madcow 2.6 in altimeter bay). 1.5 mm clearance per side round the pod |
+| LOC Magnum 3" (MAG329) | 3.1 in (76.2 mm) | 22 oz per LOC, 28.6 oz per Apogee: weigh it | 1.1–1.4 kg | 29 mm, G–H | Inexpensive, payload section included; dual deploy needs an LOC bay added |
+| LOC Graduator | 2.6 in (65.0 mm) | 13 oz (369 g) | 0.85–0.95 kg | 29 mm, D to Level 1 H | Very light single deploy. LOC still lists it; one retailer says it is discontinued |
+
+Liftoff estimates are kit + 370 g (pod and parafoil) + motor (29 mm G about
+0.12 kg, 29 mm H reload about 0.2 kg), before any dual-deploy bay and
+altimeter (Apogee's 74 mm bay is 114.5 g empty). An H motor makes the flight
+high power: the flyer needs Level 1 certification.
+
+### Kits that don't fit
+
+| Why | Kits |
+|---|---|
+| Too narrow (2 in or less) | Estes Pro Series II Ascender, Vogel, Majestic; AeroTech Mustang, Arreaux, Barracuda; LOC LaserLOC and 2.26 in IRIS; Wildman Darkstar Jr. |
+| Too heavy for 1.5 kg with the pod | LOC-IV, LOC-IV X2, T-LOC 4, 4 in Goblin, 3.1 in IRIS; Madcow Cowabunga XL DD and 3 in fiberglass Twitch; Apogee Zephyr, Invicta, Mega Mako; Wildman 3; Binder 3 in Excel DD (≈ 1 kg empty); ARR Basic Blues 3; most PML kits |
+| Blocks GPS and radio | Madcow carbon-fiber DX3 variants |
+| Not enough motor | Estes Nike Smoke and Der Big Red Max (E and F only) |
+
+### Checks on a new kit
+
+1. Measure the bay's inside diameter and clear length; weigh the parts.
+2. Model it in OpenRocket or RockSim with the pod and parafoil as mass
+   components in the bay; check the stability margin and the motor's
+   thrust-to-weight against your club's rules.
+3. Drill the 1/4 in vent beside the pod (section 3).
+4. Closed-airframe GPS test (BRINGUP.md, section 9).
+5. Ground ejection test with the pod and the bagged parafoil (gate 5): it
+   all comes out, the parafoil opens, the pod survives.
+
+Specs above are from the makers' and retailers' pages as of November 2026,
+read through search results rather than directly; stock changes often.
+Confirm on the live page before ordering. Sources: AeroTech HV Arcas
+(aerotech-rocketry.com, product 89012); Apogee Mako and the 74 mm thin-wall
+e-bay kit (apogeerockets.com); Madcow 2.6" DX3 and altimeter bays
+(madcowrocketry.com); LOC Magnum 3", Graduator and cardboard airframes
+(locprecision.com).

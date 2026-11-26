@@ -229,7 +229,9 @@ pod's own logs become the real replay test suite.
 
 Fly the gates in order: bench HIL (4), ground deploys (5), drop tests (6),
 low-power (7), high-power (8). Fly under your club's rules and NAR/Tripoli
-codes.
+codes. The test flights use two reference kits: an AeroTech HV Arcas on G
+motors first, then an Apogee Mako converted to dual deploy for Level 1
+([INTEGRATION.md, section 7](INTEGRATION.md#7-reference-rockets)).
 
 The pod never fires any pyro channel. The optional "main fired" wire takes a
 **spare** channel on your flight computer, with the opto-isolator in the
