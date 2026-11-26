@@ -21,6 +21,7 @@ void PhaseDetector::reset() {
   histHead_ = histCount_ = 0;
   histAcc_ = 0.0f;
   belowMainT_ = -1.0f;
+  belowMainExactT_ = -1.0f;
 }
 
 void PhaseDetector::pushAltitude(float agl, float dt) {
@@ -64,6 +65,7 @@ void PhaseDetector::clearFlight() {
   histHead_ = histCount_ = 0;
   histAcc_ = 0.0f;
   belowMainT_ = -1.0f;
+  belowMainExactT_ = -1.0f;
 }
 
 void PhaseDetector::resetStreak(float t, float d) {
@@ -156,6 +158,7 @@ void PhaseDetector::update(const DetectorInput& in, float dt) {
         const bool dual = p_.mainAlt > 0.0f;
         const bool belowMain = !dual || in.agl <= p_.mainAlt + std::fmax(15.0f, 0.1f * p_.mainAlt);
         if (belowMain && belowMainT_ < 0.0f) belowMainT_ = in.t;
+        if (dual && in.agl <= p_.mainAlt && belowMainExactT_ < 0.0f) belowMainExactT_ = in.t;
         const bool inBand = haveMean && belowMain && mean >= p_.bandLow && mean <= p_.bandHigh;
         if (!inBand) {
           streakActive_ = false;
@@ -170,7 +173,12 @@ void PhaseDetector::update(const DetectorInput& in, float dt) {
           const float steady = in.t - streakStart_;
           bool jolted = (in.t - lastJoltT_) <= p_.joltWindow + steady;
           if (dual) jolted = jolted && belowMainT_ >= 0.0f && lastJoltT_ >= belowMainT_;
-          if ((jolted && steady >= p_.confirmTime) || steady >= p_.confirmTimeNoJolt) {
+          // Without a jolt there is no sign the main came out, so in dual
+          // deploy the no-jolt clock only runs below the main altitude itself
+          // (a slow drogue crossing the margin above it must not count).
+          float steadyNoJolt = steady;
+          if (dual) steadyNoJolt = belowMainExactT_ >= 0.0f ? in.t - std::fmax(streakStart_, belowMainExactT_) : 0.0f;
+          if ((jolted && steady >= p_.confirmTime) || steadyNoJolt >= p_.confirmTimeNoJolt) {
             stage_ = FlightStage::Canopy;
             canopyT_ = in.t;
           }

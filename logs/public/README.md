@@ -1,13 +1,13 @@
 # Public real flight logs (fetched, not stored)
 
-`manifest.tsv` lists 133 files of real flight data that university and hobby
+`manifest.tsv` lists 135 files of real flight data that university and hobby
 rocketry teams have posted on GitHub:
 - AltosUI exports from TeleMega, TeleMetrum, EasyMega and EasyMini;
 - Featherweight Blue Raven low-rate and high-rate pairs (13 flights' worth);
 - Missile Works RRC3 exports (barometer only).
 
 They span 40 m to 8.3 km apogee, single and dual deploy, and include failed and
-late mains. Gate 3 replays every one of them in CI: 120 logs once each Blue Raven
+late mains. Gate 3 replays every one of them in CI: 122 logs once each Blue Raven
 pair is read as one, plus the 3 in `logs/real/`.
 
 Most of these repositories state no licence, so the files are **not copied
@@ -62,13 +62,13 @@ If you own one of these logs and would rather it was not used, open an issue
 and it will be removed from the manifest.
 
 **Distinct flights.** Primary and backup computers in one rocket, and a Blue
-Raven riding beside a TeleMega, are several logs of one flight. The 123
-replayed logs cover about 85 distinct flights. The spec asks gate 3 for 100+.
+Raven riding beside a TeleMega, are several logs of one flight. The 125
+replayed logs cover about 86 distinct flights. The spec asks gate 3 for 100+.
 
-**Held out** (commented lines in the manifest, with the reason):
-- RIT's 2023 KONG flight, two RRC3 logs. Its drogue fell at about 6 m/s. Even
-  with `canopy.mainAlt` set, the pod confirms the canopy about 1 s before the
-  main fires. See docs/FEASIBILITY.md.
+RIT's 2023 KONG flight (two RRC3 logs, drogue at about 6 m/s) was held out
+for a while: the pod confirmed the canopy about 1 s before the main fired.
+The detector now handles it and both logs are back (docs/FEASIBILITY.md,
+item 20).
 
 **Not included:**
 - Eggtimer logs (reader support exists). They drop to 2 Hz in descent, below

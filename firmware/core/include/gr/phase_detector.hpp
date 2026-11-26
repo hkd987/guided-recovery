@@ -89,7 +89,8 @@ class PhaseDetector {
   float hist_[kHist] = {};
   int histHead_ = 0, histCount_ = 0;
   float histAcc_ = 0.0f;
-  float belowMainT_ = -1.0f;  // dual deploy: first time below the main altitude band
+  float belowMainT_ = -1.0f;       // dual deploy: first time below the main altitude + margin
+  float belowMainExactT_ = -1.0f;  // dual deploy: first time below the main altitude itself
 };
 
 }  // namespace gr

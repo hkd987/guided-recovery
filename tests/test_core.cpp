@@ -316,6 +316,26 @@ TEST(detector_slow_drogue_needs_main_alt) {
   }
 }
 
+// Real log (RIT KONG 2023): a 6 m/s drogue and no jolt. Crossing the margin
+// above the main altitude takes longer than the no-jolt confirmation, so the
+// no-jolt clock must start at the main altitude itself.
+TEST(detector_slow_drogue_without_jolt_waits_for_main_alt) {
+  DetectorParams p;
+  p.mainAlt = 150.0f;  // margin above it: 15 m, 2.5 s at 6 m/s
+  DetFlight f(p);
+  f.toApogee();
+  bool early = false;
+  while (f.h > 150.0f) {
+    f.step(1.0f, -6.0f);
+    early = early || f.d.stage() == FlightStage::Canopy;
+  }
+  CHECK(!early);
+  const float tMain = f.t;  // main out at 150 m, gently: no jolt above 2.5 g
+  while (f.t - tMain < 12.0f && f.d.stage() == FlightStage::Descent) f.step(1.2f, -5.0f);
+  CHECK(f.d.stage() == FlightStage::Canopy);
+  CHECK(f.d.canopyTime() - tMain >= p.confirmTimeNoJolt - 0.1f);
+}
+
 // Drogue at 15 m/s with the mean dipping as the rocket swings: never a canopy.
 TEST(detector_ignores_swinging_fast_drogue) {
   DetectorParams p;

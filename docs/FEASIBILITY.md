@@ -2,11 +2,13 @@
 
 **Bottom line.** In simulation, the pod design works. The real flight code,
 fed by realistic sensor and motor models, lands the S pod within 30 m of the
-pad in **94.2%** of 1,000 randomized flights in winds up to 10 mph. The spec's
-gate 2 pass mark is 85%. Every injected fault ends the way the spec requires.
-The deployment detector also passes on **123 real flight logs** from 31 public
-repositories: it confirmed every canopy and never confirmed one before the
-main came out (gate 3, below).
+pad in **94.5%** of 1,000 randomized flights in winds up to 10 mph. The spec's
+gate 2 pass mark is 85%. Every injected fault ends the way the spec requires,
+over 400 runs of each fault on two independent seed batches. The deployment
+detector also passes on **125 real flight logs** from 31 public repositories:
+it confirmed every canopy and never confirmed one before the main came out
+(gate 3, below). Under conditions harsher than the design envelope, accuracy
+drops but no flight ever steered before its canopy opened (stress, below).
 
 The parts are buyable today for about **$191**, and the firmware compiles for
 the Heltec V3. What simulation cannot settle is the physics. That's the job
@@ -23,45 +25,83 @@ of gates 4–6:
 
 | | Gate 1 (guidance, truth) | Gate 2 (flight core in the loop) |
 |---|---|---|
-| Within 30 m | **97.8%** | **94.2%** (drop 3.6 points; allowed 5) |
+| Within 30 m | **97.8%** | **94.5%** (drop 3.3 points; allowed 5) |
 | Median miss | 1.9 m | 6.0 m |
-| 90th percentile | 11.8 m | 23.3 m |
+| 90th percentile | 11.8 m | 23.0 m |
 | Steering before canopy confirmed | 0 | **0** |
 | Crashes / non-finite outputs | 0 | **0** |
 | Canopy confirmed after opening | — | mean 4.5 s, max 6.6 s |
 
-| Injected fault (gate 2) | Expected | Result |
+| Injected fault (gate 2, 400 runs each) | Expected | Result |
 |---|---|---|
-| GPS loss | spiral within 5 s | 99/99 |
-| Stalled winch | spiral within 15 s | 89/89 |
-| Lopsided canopy (needs 50–80% brake to fly straight) | spiral within 25 s | 71/71 |
-| Gust (+3–6 m/s for 6 s) | still lands | 97/97 |
-| Low-level wind shear (direction swings 90–180°) | still lands | 100/100 |
+| GPS loss | spiral within 5 s | 381/381 (worst 3.65 s) |
+| Stalled winch | spiral within 15 s | 353/353 |
+| Lopsided canopy (needs 50–80% brake to fly straight) | spiral within 25 s | 316/316 |
+| Gust (+3–6 m/s for 6 s) | still lands | 393/393 |
+| Low-level wind shear (direction swings 90–180°) | still lands | 400/400 |
 
 "Exercised" counts only runs where the fault happened early enough before
 landing to be judged. No nominal flight ended in a false fallback.
 
 ### Batch 2: independent seeds (50000+)
 
-Checks for overfitting to batch 1.
+Checks for overfitting to batch 1: 2,000 nominal flights plus 400 per fault.
 
 | Measure | Result |
 |---|---|
-| Gate 1 | 96.4% within 30 m |
-| Gate 2 | **93.0%** within 30 m |
-| Faults | all exercised faults met their expected outcome: GPS loss 98/98, stalled winch 90/90, lopsided canopy 75/75, gust 100/100, shear 100/100 |
-| False fallbacks | 0 |
+| Gate 1 | 97.0% within 30 m |
+| Gate 2 | **93.3%** within 30 m |
+| Faults | every exercised fault met its expected outcome: GPS loss 388/388, stalled winch 352/352, lopsided canopy 308/308, gust 396/396, shear 400/400 |
+| False fallbacks | 0 in 2,000 |
 
-A longer run (400 faults of each kind) finds a small tail that batches of 100
-can miss: 3 of 314 lopsided canopies are never flagged (the pod keeps guiding
-to the end, compensating with trim) and 1 of 353 stalled winches is caught
-late (29–43 s instead of 15 s). The build before this change shows the same
-tail on the same seeds, so it is an open item rather than a regression.
+Batches of 100 faults had hidden a tail. At 400 runs, 3 of 314 lopsided
+canopies were never flagged and 1 of 353 jammed winches was caught late
+(items 16–18 below). Both batches now pass completely.
+
+### Stress: harsher than the design envelope
+
+`grsim stress` flies the real flight core through conditions beyond the
+nominal Monte Carlo, one dial at a time and then together (500 flights each,
+winds to 10 mph, seeds independent of both batches). CI runs a 200-flight
+version and fails on any early steering or crash.
+
+| Condition | Within 30 m | Median | 90th pct | Early steering | Crashes | Fallbacks fired (GPS / lopsided) |
+|---|---|---|---|---|---|---|
+| Nominal | 94.8% | 6.3 m | 22 m | 0 | 0 | 0 / 0 |
+| Canopy model 20% off | 82.2% | 10.8 m | 45 m | 0 | 0 | 0 / 36 |
+| Canopy model 30% off | 62.6% | 20.8 m | 249 m | 0 | 0 | 0 / 123 |
+| Turbulence, moderate (2× gusts, vertical air) | 90.4% | 7.4 m | 29 m | 0 | 0 | 0 / 1 |
+| Turbulence, strong (3× gusts, thermals to 2.5 m/s) | 82.4% | 12.5 m | 42 m | 0 | 0 | 0 / 4 |
+| Swing and harness twist, moderate (7°, 9°/s) | 94.0% | 6.0 m | 25 m | 0 | 0 | 0 / 3 |
+| Swing and harness twist, strong (14°, 20°/s) | 82.4% | 7.9 m | 84 m | 0 | 0 | 0 / 65 |
+| GPS degraded under canopy (noise, 6–9 satellites, dropouts) | 84.4% | 12.0 m | 38 m | 0 | 0 | 40 / 0 |
+| GPS poor under canopy (5 Hz, 5–7 satellites, frequent dropouts) | 54.6% | 25.7 m | 246 m | 0 | 0 | 192 / 0 |
+| Combined moderate | 59.6% | 22.4 m | 158 m | 0 | 0 | 38 / 67 |
+| Combined harsh | 22.0% | 95 m | 563 m | 0 | 0 | 142 / 198 |
+
+What it says:
+- **Safe everywhere.** 5,500 harsh flights: no steering before the canopy,
+  no crashes, one canopy never confirmed (combined harsh). Every bad landing
+  is a spiral or a long miss, never a pod fighting a packed canopy.
+- **The canopy model matters most.** 20% off costs 12 points, 30% off costs
+  32. Most of the loss is the lopsided check firing on canopies that are only
+  biased or weak (with the model 30% off, 94 of 123 flags were false by the
+  canopy's true rigging). Fitting the model from drop tests (gate 6) is what
+  fixes this, not more simulation.
+- **Strong harness twist fools the lopsided check.** The pod's gyro sees the
+  twist and the steering loop reacts to it, which skews the trim estimate.
+  Moderate twist is fine (3 false flags in 500). Gate 5–6 logs will show how
+  much the real pod twists.
+- **GPS dropouts were the cheapest fix.** The pod used to spiral after 2 s
+  without a fix; it now dead-reckons for 3.5 s, which lifted degraded GPS
+  from 68% to 84% and poor GPS from 34% to 55% (item 19).
+- **Turbulence and thermals cost a little** and never prevented canopy
+  confirmation.
 
 ### Gate 3: log replay on real flights
 
-123 real flight logs replay through the detector on every CI run. 3 are stored
-in `logs/real/` (MIT). 133 files are fetched from public GitHub repositories at
+125 real flight logs replay through the detector on every CI run. 3 are stored
+in `logs/real/` (MIT). 135 files are fetched from public GitHub repositories at
 pinned commits (`logs/public/`), and each Blue Raven low-/high-rate pair counts
 as one log. The flight computers are AltOS (TeleMega, TeleMetrum, EasyMega,
 EasyMini), Featherweight Blue Raven and Missile Works RRC3. The flights run
@@ -81,7 +121,7 @@ band.
 
 | Measure (real logs, `--main-alt log`) | Result |
 |---|---|
-| Canopies the pod had to confirm | **79/79** confirmed |
+| Canopies the pod had to confirm | **81/81** confirmed |
 | Confirmed before the main came out | **0** |
 | Confirmed while falling too fast for a canopy | **0** |
 | Not scored: fast or failed main / below 30 m / at a band edge / log too short | 25 / 6 / 4 / 5 (confirmed anyway: 3, -, 3, -) |
@@ -98,7 +138,7 @@ were, 32 of 47 canopies were confirmed (at the scoring rules used then), with
 (items 12–15 below).
 
 **Still short of the spec.** Primary and backup computers in one rocket count
-as several logs, so the 123 logs cover about 85 distinct flights; the spec asks
+as several logs, so the 125 logs cover about 86 distinct flights; the spec asks
 for 100+. The flights also descended under round parachutes, not parafoils:
 the logs test boost, coast, drogue, ejection shocks, pressure spikes and
 opening dynamics, but the steady descent after opening is a round chute's.
@@ -113,13 +153,12 @@ altitude (plus max(15 m, 10%)) counts as canopy evidence: all three pass.
 Builders flying dual deploy must set it, and should use a drogue that falls
 faster than 12 m/s.
 
-**Held out: a slow drogue the setting doesn't cover.** In RIT's 2023 KONG
-flight (two RRC3 logs) the drogue fell at about 6 m/s. The margin above the
-main altitude (max(15 m, 10%), here 46 m) takes 7.6 s to fall through at that
-speed. The 7 s no-jolt confirmation fires inside it, about 1 s before the main.
-Both logs are commented out in the manifest until the detector handles it.
-Options include dropping the no-jolt path in dual-deploy mode, or scaling its
-time with the margin and the descent rate.
+**A slow drogue with no jolt.** In RIT's 2023 KONG flight (two RRC3 logs) the
+drogue fell at about 6 m/s, and the margin above the main altitude took 7.6 s
+to fall through, longer than the 7 s no-jolt confirmation. The pod confirmed
+about 1 s before the main. Fixed (item 20): in dual deploy, the no-jolt clock
+only runs below the main altitude itself. Both logs are back in the set and
+pass.
 
 ## What size parafoil? (canopy sweep)
 
@@ -159,8 +198,9 @@ What the sweep says:
 
 Items 1–8 were each found by a failing Monte Carlo run, traced in a
 single-flight replay, and fixed. Items 9–11 came from the TLA+ model, the
-gate-4 harness and code review. Items 12–15 came from replaying real flight
-logs. This is the point of software-first testing.
+gate-4 harness and code review. Items 12–15 and 20 came from replaying real
+flight logs, items 16–19 from larger fault batches and the stress sweep. This
+is the point of software-first testing.
 
 1. **Steering on GPS course fails when wind aloft beats the canopy.** At 700 m
    with 9–10 m/s of wind, the pod circled. Fix: heading is now derived with no
@@ -228,6 +268,29 @@ logs. This is the point of software-first testing.
     32 m when the rocket was at 180 m. Fix: take the median of the second
     before the main fires.
 
+16. **A lopsided canopy that pins a brake was never flagged** (found by
+    400-run fault batches). The lopsided test waits until its trim estimate
+    is confident, and that needs the brakes to move both ways. A canopy
+    pulling so hard that one brake stays at full travel never gives it that.
+    Fix: a second rule. Brake held hard over for 2 s, and the canopy turning
+    far less than asked, or far less per unit of brake than it turns the
+    other way, for 6 s means lopsided. A canopy that is equally weak both ways
+    is not flagged, and weaving on final doesn't trip it.
+17. **The test harness's lopsided fault was mislabelled.** It promised "needs
+    50–80% brake to fly straight" but ignored the canopy's own rigging bias,
+    which could cancel part of it: one "lopsided" canopy really needed 36%,
+    under the firmware's 38% threshold, and flew home 3 m from the pad. The
+    harness now injects exactly 50–80% net.
+18. **A winch jammed at "released" slipped past the self-check.** The idle
+    exercise waited for 4 s without a target change, and tiny steering
+    corrections kept resetting it, so it never ran on a spool that couldn't
+    move anyway. Fix: idle now means the spool hasn't actually moved.
+19. **Brief GPS dropouts ended guidance** (found by the stress sweep). Any
+    gap over 2 s meant spiral. Fix: dead-reckon for up to 3.5 s; a real loss
+    still spirals within 3.65 s (the gate allows 5).
+20. **A slow drogue could still pass for the canopy with `canopy.mainalt`
+    set** (found by real logs, RIT KONG 2023). See gate 3.
+
 ## Not proven yet
 
 | Gate / question | Status |
@@ -235,7 +298,7 @@ logs. This is the point of software-first testing.
 | Gate 4 (HIL) | Harness built and passing with a stand-in board: 20 flights, every frame answered, under 1 ms per frame on the PC. The serial path was also tested in real time over a pseudo-terminal. Needs a real board and winches on the bench |
 | Gate 5 (ground deploy) and the spec's first open question: does a parafoil open cleanly after a hard ejection? | Simulation assumes it opens in 0.8–2.5 s |
 | Gate 6 (drop tests) | The canopy model is the spec's "simple model" and needs fitting to real turn, glide and sink data. Every result above assumes canopies within about ±6% airspeed/sink and ±15% turn gain of the tested design |
-| Gate 3 on 100+ real flights | 123 real logs, about 85 distinct flights, all passing (2 held out, see gate 3). Need about 15 more; all are round-parachute flights logged in the airframe, not by the pod |
+| Gate 3 on 100+ real flights | 125 real logs, about 86 distinct flights, all passing. Need about 15 more; all are round-parachute flights logged in the airframe, not by the pod |
 | Pod-mounted IMU vs. airframe logs (spec open question) | Replay proves the logic, not the thresholds |
 | Firmware on hardware | Drivers are written from datasheets: BMI088, LSM6DSO32, BMP390, ADXL375, u-blox M10 UBX, PCNT encoders, DRV8833, SX1262. They compile but have not run. Bench-check each with `selftest` |
 | Heltec V4 | Not supported (different pin map) |
@@ -249,3 +312,6 @@ logs. This is the point of software-first testing.
 - **Low deployments far downwind can't make it back.** The pod lands short,
   but on the right line.
 - **Dual deploy with a slow drogue needs `canopy.mainalt`.** See gate 3.
+- **A canopy far from the firmware's model, or a pod that twists hard on its
+  harness, trips the lopsided check.** The pod then spirals: safe, but the
+  flight doesn't come home. See stress; drop tests (gate 6) fix the model.

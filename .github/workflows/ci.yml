@@ -21,6 +21,8 @@ jobs:
         run: ./build/grsim gate1 --runs 1000 --out reports
       - name: Gate 2 - software in the loop, with faults and accuracy regression check
         run: ./build/grsim gate2 --runs 1000 --fault-runs 100 --out reports --baseline sim/baseline.json
+      - name: Stress - harsher than nominal (fails on early steering or a crash)
+        run: ./build/grsim stress --runs 200 --out reports
       - name: Gate 3 - deployment detector on synthetic logs
         run: |
           ./build/grsim synth-logs --count 200 --out logs/synthetic
