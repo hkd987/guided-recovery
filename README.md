@@ -16,7 +16,7 @@ this OS onto it.
 | 1 | Guidance law lands the canopy | Simple parafoil model, perfect knowledge | **PASS** 97.8% within 30 m (1,000 runs, winds to 10 mph) |
 | 2 | The real flight code does it with real-world sensors | Flight core + sensor/winch models, pad to touchdown | **PASS** 94.5% within 30 m; every injected fault ends as specified (400 runs each, two seed batches) |
 | 3 | Deployment detector catches the main, ignores boost/coast/drogue | Replay of **125 real flight logs** from 31 public repos (+200 synthetic) | **PASS** every canopy confirmed (81/81), none before the main; about 86 distinct flights so far, the spec asks for 100+ |
-| Stress | Harsher than the design envelope: canopy model 20–30% off, turbulence and thermals, harness twist, poor GPS | `grsim stress`, 5,500 flights | **SAFE** no early steering, no crashes. Accuracy 55–95% per condition; the canopy model matters most (see FEASIBILITY.md) |
+| Stress | Harsher than the design envelope: canopy model 20–30% off, turbulence and thermals, harness twist, poor GPS | `grsim stress`, 7,000 flights | **SAFE** no early steering, no crashes. Accuracy 55–95% per condition; the canopy model matters most (see FEASIBILITY.md) |
 | 4 | The real board flies simulated flights with its real winches | `grhil` over USB, 200 Hz | **Harness ready.** PASS with a stand-in board (20 flights, every frame answered); needs a real board |
 | 5–8 | Ground deploys, drop tests, flights | Field | Not started (needs hardware) |
 | Formal | Guardrails hold for **every** possible sensor/fault/restart sequence | TLA+ model checked with TLC; C++ traces validated against it | **PASS** 17 properties, 157,056 states, 7/7 injected bugs caught; 3,857/3,857 C++ steps conform |

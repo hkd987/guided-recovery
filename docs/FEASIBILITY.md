@@ -90,7 +90,7 @@ version and fails on any early steering or crash.
 | Combined harsh | 22.2% | 95 m | 568 m | 0 | 0 | 143 / 198 |
 
 What it says:
-- **Safe everywhere.** 5,500 harsh flights: no steering before the canopy,
+- **Safe everywhere.** 7,000 harsh flights: no steering before the canopy,
   no crashes, one canopy never confirmed (combined harsh). Every bad landing
   is a spiral or a long miss, never a pod fighting a packed canopy.
 - **The canopy model matters most.** 20% off costs 12 points, 30% off costs
