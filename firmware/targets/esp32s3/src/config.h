@@ -32,6 +32,9 @@ struct PodSettings {
   // Dual deploy: the main altitude set on the host flight computer (m AGL).
   // 0 = single deploy (parafoil out at apogee). Appended in settings v3.
   float mainAltM = 0.0f;
+  // "Main fired" sense line: 0 ignore, 1 counts as an opening jolt, 2 required.
+  // Appended in settings v4.
+  uint8_t mainSense = 1;
 };
 
 extern PodSettings g_settings;

@@ -40,7 +40,7 @@ void flightTask(void*) {
   uint8_t baroDiv = 0, battDiv = 0, snapDiv = 0;
   uint32_t padLogDiv = 0;
   float battV = batteryVolts();
-  float pressure = 0.0f, tempC = 0.0f;
+  float pressure = 0.0f, pressure2 = 0.0f, tempC = 0.0f;
   gr::Inputs in;
   for (;;) {
     if (hilActive()) {
@@ -78,10 +78,18 @@ void flightTask(void*) {
         in.pressurePa = pressure = p;
         in.baroTempC = tempC = t;
       }
+      if (baro2Read(p, t)) {
+        in.baroFresh2 = true;
+        in.pressurePa2 = pressure2 = p;
+      }
       gr::Vec3 hg;
       if (highGRead(hg)) { in.highG = toBody(hg); in.highGValid = true; }
     }
     gpsPoll(in.gps);
+    // Backup kit: present once the sensor answered (barometer) or sent frames (GPS).
+    in.baro2Present = g_sensors.baro2;
+    if (gps2Poll(in.gps2)) {}
+    in.gps2Present = g_gps2.seen;
     encodersRead(in.encoder[0], in.encoder[1]);
     const int32_t rawEnc[2] = {in.encoder[0], in.encoder[1]};
     in.encoder[0] *= g_settings.encSignL;
@@ -128,6 +136,7 @@ void flightTask(void*) {
       snap.accelBody = in.imu.accel;
       snap.gyroBody = in.imu.gyro;
       snap.pressurePa = pressure;
+      snap.pressurePa2 = pressure2;
       snap.tempC = tempC;
       snap.batteryV = battV;
       snap.encoder[0] = in.encoder[0];
@@ -248,19 +257,22 @@ void setup() {
   Serial.println("\nGuided Recovery OS - S pod (Heltec V3)");
   settingsLoad();
   ioBegin();
+  watchdogBegin();
   motorsBegin();
   motorsWrite(0, 0, false);
   encodersBegin();
   displayBegin();
   sensorsBegin();
-  Serial.printf("IMU %s, baro %s, high-g %s\n",
+  Serial.printf("IMU %s, baro %s%s, high-g %s\n",
                 g_sensors.imu == ImuType::Bmi088 ? "BMI088" : g_sensors.imu == ImuType::Lsm6dso32 ? "LSM6DSO32" : "MISSING",
-                g_sensors.baro ? "BMP390" : "MISSING", g_sensors.highG ? "ADXL375" : "none");
+                g_sensors.baro ? "BMP390" : "MISSING", g_sensors.baro2 ? " + second BMP390 (backup kit)" : "",
+                g_sensors.highG ? "ADXL375" : "none");
   // After an in-flight restart, get going quickly: the receiver is still
   // configured, so the first baud rate tried answers at once.
   const bool maybeInFlight = warmRestart() && rtcSnapshot.magic == gr::kResumeMagic;
   Serial.print("GPS: configuring... ");
-  Serial.println(gpsBegin(maybeInFlight ? 1500 : 4000) ? "ok" : "no response (check wiring)");
+  Serial.println(gpsBegin(maybeInFlight ? 1500 : 4000, !maybeInFlight) ? "ok" : "no response (check wiring)");
+  gps2Begin();  // backup kit: listens on GPIO 19; harmless if nothing is there
   Serial.printf("Log: %s\n", flashLogBegin() ? "ok" : "partition missing");
   Serial.printf("Radio: %s\n", radioBegin(g_settings.radioMHz, g_settings.radioDbm) ? "ok" : "failed");
   appStart();

@@ -29,11 +29,22 @@ bool waitForPvt(uint32_t ms) {
 
 const gr::ubx::Parser& gpsParser() { return parser; }
 
-bool gpsBegin(uint32_t timeoutMs) {
+bool gpsBegin(uint32_t timeoutMs, bool sweepAll) {
   static const uint32_t bauds[] = {115200, 38400, 9600, 57600, 230400};
   uint8_t cfg[256];
   const size_t n = gr::ubx::buildPodConfig(115200, cfg, sizeof cfg);
   gpsSerial.setRxBufferSize(1024);  // NAV-PVT is 100 bytes; keep several in hand
+  if (sweepAll) {
+    // A second receiver listens on the same TX line: give it the
+    // configuration at every rate it might be using.
+    for (uint32_t b : bauds) {
+      gpsSerial.begin(b, SERIAL_8N1, board::kGpsRx, board::kGpsTx);
+      delay(30);
+      gpsSerial.write(cfg, n);
+      gpsSerial.flush();
+      delay(60);
+    }
+  }
   const uint32_t t0 = millis();
   while (millis() - t0 < timeoutMs) {
     for (uint32_t b : bauds) {
@@ -69,6 +80,65 @@ bool gpsPoll(gr::GpsFix& fix) {
   }
   return got;
 }
+
+// ============================================================ second GPS
+
+Gps2Status g_gps2;
+
+namespace {
+HardwareSerial& gps2Serial = Serial2;
+gr::ubx::Parser parser2;
+}  // namespace
+
+void gps2Begin() {
+  gps2Serial.setRxBufferSize(1024);
+  gps2Serial.begin(115200, SERIAL_8N1, board::kGps2Rx, -1);  // RX only
+  g_gps2.started = true;
+}
+
+bool gps2Poll(gr::GpsFix& fix) {
+  if (!g_gps2.started) return false;
+  bool got = false;
+  int budget = 512;
+  while (gps2Serial.available() && budget-- > 0) {
+    if (parser2.feed(static_cast<uint8_t>(gps2Serial.read()))) {
+      fix = parser2.fix();
+      ++g_gps2.fixes;
+      g_gps2.seen = true;
+      got = true;
+    }
+  }
+  return got;
+}
+
+// ============================================================== watchdog
+
+namespace {
+volatile bool petInhibit = false;
+bool petLevel = false;
+}  // namespace
+
+void watchdogBegin() {
+  pinMode(board::kWatchdogPet, OUTPUT);
+  digitalWrite(board::kWatchdogPet, LOW);
+  petLevel = false;
+}
+
+void watchdogInhibit(bool on) { petInhibit = on; }
+
+namespace {
+void watchdogPet(bool allowed) {
+  // Plain GPIO writes from the control loop, never a timer or PWM: if the
+  // loop stops, the edges stop, and the driver goes to sleep.
+  if (allowed && !petInhibit) {
+    petLevel = !petLevel;
+    digitalWrite(board::kWatchdogPet, petLevel ? HIGH : LOW);
+  } else if (petLevel) {
+    petLevel = false;
+    digitalWrite(board::kWatchdogPet, LOW);
+  }
+}
+}  // namespace
 
 // ================================================================== motors
 
@@ -122,6 +192,7 @@ void motorsBegin() {
 void motorsWrite(float dutyL, float dutyR, bool enabled) {
   driveOne(0, 1, dutyL, enabled);
   driveOne(2, 3, dutyR, enabled);
+  watchdogPet(enabled);
 }
 
 // ================================================================ encoders

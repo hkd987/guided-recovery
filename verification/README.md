@@ -30,8 +30,8 @@ CI runs the same script on every push, in the `formal` job.
 
 ## What is proven
 
-TLC explores all **78,464 reachable states** (about 40 million transitions) in
-about two minutes. That includes a processor restart at any moment in flight
+TLC explores all **157,056 reachable states** (about 159 million transitions)
+in about five minutes. That includes a processor restart at any moment in flight
 (`WarmReset`: brownout, watchdog or crash, then `FlightCore::resume`).
 
 **Invariants**, true in every state:
@@ -65,25 +65,28 @@ switched off.
 
 ## How we know it isn't vacuous
 
-- **Witnesses.** Nine key situations are shown to be reachable: guiding, GPS
+- **Witnesses.** Ten key situations are shown to be reachable: guiding, GPS
   spiral, collapse, a bench jam carried into flight, no-home spiral, landing
   without a canopy, arming with a latched jam, releasing after a restart
-  under canopy, and guiding after a restart in descent. If a property only held
+  under canopy, guiding after a restart in descent, and a spiral because no
+  barometer could be believed. If a property only held
   because those states could never happen, a witness would show it.
-- **Mutations.** Six known bugs are re-injected one at a time. TLC catches
+- **Mutations.** Seven known bugs are re-injected one at a time. TLC catches
   every one, with a counterexample of 4–7 steps:
   - `stale_candidate`, the real bug described below;
   - motors powered in descent;
   - home point updated after launch;
   - GPS failsafe removed;
   - magnet able to disarm in flight;
-  - steering resumed after a restart under canopy.
+  - steering resumed after a restart under canopy;
+  - barometer failsafe removed (guiding on with no believable barometer).
 
 ## Is the C++ the same as the model? (trace validation)
 
 `sim/apps/grtrace.cpp` runs the real C++ flight core through:
 
-- simulated flights (nominal and every fault type), continuing after
+- simulated flights (nominal and every fault type, with and without the
+  backup kit's second barometer and GPS), continuing after
   touchdown: line release, magnet on, re-armed at a field 12 m higher;
 - scripted bench sessions: jog, jam, console reset, home learning, handling
   bumps, disarming with a launch pending, bench commands refused while armed;
@@ -91,7 +94,7 @@ switched off.
 
 It records every change of the decision state. `tla/PodTrace.tla` then checks
 that **each recorded change is one step the model allows**. Current result:
-226 traces, 2,707 state changes, 0 disallowed.
+346 traces, 3,857 state changes, 0 disallowed.
 
 When the stale-flag bug was put back into the C++, this check rejected 50
 steps.

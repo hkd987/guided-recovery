@@ -30,11 +30,12 @@ That's the spec's "thin hardware layer" pattern, as used by ArduPilot's SITL.
 
 | Stage | Module | What it does |
 |---|---|---|
+| Sense | `BaroVoter`, `GpsSelector` | One or two barometers: health checks (silent, out of range, frozen), cross-check, GPS Doppler decides which is wrong; no believable barometer blocks canopy confirmation and ends guidance. One or two GPS receivers: fail over to receiver 2 (pad-calibrated offset) |
 | Estimate | `AltitudeFilter` | Barometric height and climb rate (Kalman); rejects ejection pressure spikes |
 | | `AttitudeFilter` | Gravity direction only (Mahony). Turns gyro rates into turn rate about the vertical. The accelerometer is ignored between launch and canopy |
 | | `GeoOrigin` | GPS → metres from home |
 | | `WindEstimator` | Least-squares circle fit of GPS ground velocity while turning: centre = wind, radius = airspeed. Refined on straight legs. No compass |
-| Detect | `PhaseDetector` | Launch (accel + baro confirm), burnout, apogee, **canopy confirmed** (mean descent over the last 3 s within 1.5–9 m/s for 2.5 s after a jolt, or 7 s without one; with `canopy.mainalt` set, only below the main altitude and only a jolt below it counts), landed |
+| Detect | `PhaseDetector` | Launch (accel + baro confirm), burnout, apogee, **canopy confirmed** (mean descent over the last 3 s within 1.5–9 m/s for 2.5 s after a jolt, or 7 s without one; with `canopy.mainalt` set, only below the main altitude and only a jolt below it counts; with a GPS fix, GPS descent must also have been canopy-like for 2.5 s; optional sense line as evidence or required), landed |
 | Guide | `Guidance` | Homing → Loiter (orbit home to burn height) → Final (turn in when the straight glide uses the remaining height; trim with symmetric brake; S-turns if high) → Flare |
 | Steer | `Steering` | Turn-rate PI with feedforward. A Kalman filter learns canopy turn gain and bias → lopsided detection |
 | Actuate | `WinchController` | Position loop per winch, 6 V cap on a 2S pack, stall / wrong-way detection, idle exercise |

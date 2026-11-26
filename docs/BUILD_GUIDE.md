@@ -27,7 +27,23 @@ order.
 | 10 | Buzzer, 85 dB, + NPN transistor + diode | Same Sky CMI-1295-85T | 5 | For finding the rocket in tall grass |
 | 11 | Structure: printed PETG/nylon shell, Kevlar load loop, 2 swivels, 2 quick links, PTFE line guides, 16 mm spools | — | ~20 | Estimate. The load path is Kevlar, never plastic |
 | 12 | Wire, connectors, 100 k + 33 k resistors | — | ~5 | Estimate |
-| | **Total** | | **≈ $191** | Optional ADXL375 high-g logger (Adafruit 5374, $24.95) brings it to ≈ $216 |
+| 13 | **Motor-driver watchdog**: 2× 2N3904, 2N3906, 2× BAT85, 1 µF ×2, 1.5 µF, 8 resistors | [WATCHDOG.md](WATCHDOG.md) | ~3 | Standard. Holds the motor driver asleep unless the flight loop keeps proving it's alive |
+| | **Total** | | **≈ $194** | Optional ADXL375 high-g logger (Adafruit 5374, $24.95) brings it to ≈ $219 |
+
+### Optional backup kit
+
+None of this is needed for the pod to be safe: any sensor failure already
+ends in "stop steering". The kit lets more flights still come home when a
+sensor fails, and adds independent checks on the canopy-open decision. The
+firmware finds whatever is fitted.
+
+| Part | ≈ $ | Weight | What it buys |
+|---|---|---|---|
+| Second BMP390 (Adafruit 4816, SDO soldered to GND) | 11 | 1.5 g | Two barometers cross-check each other, GPS breaks ties: a failed one is dropped and guidance carries on |
+| "Main fired" sense line: opto-isolator (e.g. PC817) + resistor | 1 | 1 g | Independent proof the main came out. `set sense.main 2` makes it **required** for the canopy decision |
+| Second GPS (any M10 module, like item 4) | 21.50 | 6–10 g | Takes over if GPS 1 goes quiet. Helps most at sites with poor sky view |
+
+The backup kit adds ≈ $34 and 9–13 g (under 1% of a 1.5 kg rocket).
 | — | Test parafoils, 2–3 sizes (RC or balloon-payload market) | | TBD | Aim for **~8 m/s trim airspeed** at your pod + rocket weight (see FEASIBILITY.md) |
 
 **Changes from the spec's draft list (v0.1, ~$170):**
@@ -71,6 +87,11 @@ The first flash also writes the partition table, which includes the flight-log
 partition. Optional: flash a second Heltec V3 as a ground receiver with
 `pio run -e ground -t upload`. It shows the pod's phase, height and position
 on its own screen.
+
+With the "main fired" sense line fitted (backup kit), choose how much it
+counts: `set sense.main 1` (default) treats it as evidence like an opening
+jolt; `set sense.main 2` refuses to confirm a canopy without it. Use 2 only
+when the sense line is wired and bench-tested.
 
 Set your radio band before flying outside the US. The default is 915 MHz.
 

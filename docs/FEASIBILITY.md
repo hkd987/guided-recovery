@@ -35,10 +35,17 @@ of gates 4–6:
 | Injected fault (gate 2, 400 runs each) | Expected | Result |
 |---|---|---|
 | GPS loss | spiral within 5 s | 381/381 (worst 3.65 s) |
+| GPS loss, second GPS fitted | keeps guiding on receiver 2 | 393/393 |
 | Stalled winch | spiral within 15 s | 353/353 |
 | Lopsided canopy (needs 50–80% brake to fly straight) | spiral within 25 s | 316/316 |
 | Gust (+3–6 m/s for 6 s) | still lands | 393/393 |
 | Low-level wind shear (direction swings 90–180°) | still lands | 400/400 |
+| Barometer freezes under canopy | spiral within 10 s | 375/375 |
+| Barometer freezes, second barometer fitted | keeps guiding | 392/392 |
+| Barometer drifts 3–6 m/s under canopy | spiral within 12 s | 359/359 |
+| Barometer drifts, second barometer fitted | keeps guiding | 395/395 |
+| Barometer drifts 8–14 m/s under the drogue (fakes a canopy) | never steers before the canopy, lands | 400/400 |
+| Same, second barometer fitted | as above, and guides once the canopy opens | 400/400 |
 
 "Exercised" counts only runs where the fault happened early enough before
 landing to be judged. No nominal flight ended in a false fallback.
@@ -51,7 +58,7 @@ Checks for overfitting to batch 1: 2,000 nominal flights plus 400 per fault.
 |---|---|
 | Gate 1 | 97.0% within 30 m |
 | Gate 2 | **93.3%** within 30 m |
-| Faults | every exercised fault met its expected outcome: GPS loss 388/388, stalled winch 352/352, lopsided canopy 308/308, gust 396/396, shear 400/400 |
+| Faults | every exercised fault met its expected outcome, all 12 cases above (e.g. GPS loss 388/388, lopsided canopy 308/308, drogue barometer drift 400/400 with and without the kit) |
 | False fallbacks | 0 in 2,000 |
 
 Batches of 100 faults had hidden a tail. At 400 runs, 3 of 314 lopsided
@@ -75,9 +82,12 @@ version and fails on any early steering or crash.
 | Swing and harness twist, moderate (7°, 9°/s) | 94.0% | 6.0 m | 25 m | 0 | 0 | 0 / 3 |
 | Swing and harness twist, strong (14°, 20°/s) | 82.4% | 7.9 m | 84 m | 0 | 0 | 0 / 65 |
 | GPS degraded under canopy (noise, 6–9 satellites, dropouts) | 84.4% | 12.0 m | 38 m | 0 | 0 | 40 / 0 |
-| GPS poor under canopy (5 Hz, 5–7 satellites, frequent dropouts) | 54.6% | 25.7 m | 246 m | 0 | 0 | 192 / 0 |
-| Combined moderate | 59.6% | 22.4 m | 158 m | 0 | 0 | 38 / 67 |
-| Combined harsh | 22.0% | 95 m | 563 m | 0 | 0 | 142 / 198 |
+| GPS poor under canopy (5 Hz, 5–7 satellites, frequent dropouts) | 54.6% | 25.8 m | 246 m | 0 | 0 | 192 / 0 |
+| GPS degraded, second GPS fitted | 89.0% | 10.5 m | 32 m | 0 | 0 | 19 / 0 |
+| GPS poor, second GPS fitted | 65.2% | 20.1 m | 153 m | 0 | 0 | 117 / 0 |
+| Combined moderate | 59.8% | 22.2 m | 158 m | 0 | 0 | 38 / 66 |
+| Combined moderate, full backup kit | 66.4% | 20.7 m | 130 m | 0 | 0 | 20 / 66 |
+| Combined harsh | 22.2% | 95 m | 568 m | 0 | 0 | 143 / 198 |
 
 What it says:
 - **Safe everywhere.** 5,500 harsh flights: no steering before the canopy,
@@ -97,6 +107,19 @@ What it says:
   from 68% to 84% and poor GPS from 34% to 55% (item 19).
 - **Turbulence and thermals cost a little** and never prevented canopy
   confirmation.
+- **A second GPS helps where GPS is the problem:** degraded GPS 84% → 89%,
+  poor GPS 55% → 65%. Half the simulated dropouts are shared by both
+  receivers (the canopy overhead shades both antennas), which limits it.
+
+### Backup kit
+
+The kit is optional; a basic pod is already fail-safe (any sensor failure
+ends in "stop steering"). With the kit fitted, the same normal flights land
+94.6% within 30 m (1,000 runs, no false fallbacks), and barometer or GPS
+failures that used to end guidance no longer do (fault table above). The
+watchdog is standard on every pod: [WATCHDOG.md](WATCHDOG.md), verified in
+2,085 ngspice runs across tolerances, 3.0–3.6 V and 0–50 °C (asleep within
+0.15 s of the last pet, awake within 40 ms, asleep at power-up).
 
 ### Gate 3: log replay on real flights
 
@@ -199,8 +222,9 @@ What the sweep says:
 Items 1–8 were each found by a failing Monte Carlo run, traced in a
 single-flight replay, and fixed. Items 9–11 came from the TLA+ model, the
 gate-4 harness and code review. Items 12–15 and 20 came from replaying real
-flight logs, items 16–19 from larger fault batches and the stress sweep. This
-is the point of software-first testing.
+flight logs, items 16–19 from larger fault batches and the stress sweep, and
+items 21–24 from building the backup kit. This is the point of software-first
+testing.
 
 1. **Steering on GPS course fails when wind aloft beats the canopy.** At 700 m
    with 9–10 m/s of wind, the pod circled. Fix: heading is now derived with no
@@ -290,6 +314,30 @@ is the point of software-first testing.
     still spirals within 3.65 s (the gate allows 5).
 20. **A slow drogue could still pass for the canopy with `canopy.mainalt`
     set** (found by real logs, RIT KONG 2023). See gate 3.
+
+21. **A drifting barometer could make a drogue look like a canopy**, on a
+    basic pod, before the backup kit existed (found by the new
+    `baro_drift_drogue` fault). A barometer reading 8–14 m/s too slow under a
+    20 m/s drogue looks exactly like a canopy; in the first run, 72 of 200
+    basic pods confirmed a canopy that was still packed. Fix: when GPS has a
+    fix, its own Doppler descent rate must also have been canopy-like for the
+    full 2.5 s. Now 0 in 1,600 runs (two seed batches, with and without the
+    kit).
+22. **The barometer voter never learned barometer 2's offset** (found in
+    simulation). It waited for both to report in the same 5 ms cycle, and
+    sensors reading at 50 Hz out of step never do. Two normal units 50 Pa
+    apart then flickered in and out of "disagree". Fix: pair each reading
+    with the other's latest.
+23. **Poor GPS condemned a healthy lone barometer** (found by the stress
+    sweep). Comparing height change with GPS *altitude* change is too noisy
+    under degraded GPS. Fix: integrate GPS Doppler vertical speed instead,
+    which is accurate to under a metre over 5 s.
+24. **The wiring guide would have left the motors dead** (found while
+    designing the watchdog). It said the DRV8833 breakout pulls its sleep
+    pin high. Adafruit's schematic shows no pull-up, and the chip pulls it
+    low inside: following the guide, the winches would never have moved. The
+    watchdog now drives that pin; a pod built without it must tie SLP to
+    3.3 V.
 
 ## Not proven yet
 

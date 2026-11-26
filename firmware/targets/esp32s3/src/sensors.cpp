@@ -39,10 +39,11 @@ int16_t le16(const uint8_t* p) { return static_cast<int16_t>(p[0] | (p[1] << 8))
 struct Bmp390Cal {
   double t1, t2, t3;
   double p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11;
-} cal;
-double tLin = 0.0;
+  double tLin;
+} cals[2];  // barometer 1, and the backup kit's barometer 2
 
-bool bmp390Init(uint8_t addr) {
+bool bmp390Init(int idx, uint8_t addr) {
+  Bmp390Cal& cal = cals[idx];
   writeReg(addr, 0x7E, 0xB6);  // soft reset
   delay(10);
   uint8_t c[21];
@@ -71,15 +72,17 @@ bool bmp390Init(uint8_t addr) {
   return ok;
 }
 
-double bmp390Temp(uint32_t ut) {
+double bmp390Temp(int idx, uint32_t ut) {
+  Bmp390Cal& cal = cals[idx];
   const double pd1 = static_cast<double>(ut) - cal.t1;
   const double pd2 = pd1 * cal.t2;
-  tLin = pd2 + pd1 * pd1 * cal.t3;
-  return tLin;
+  cal.tLin = pd2 + pd1 * pd1 * cal.t3;
+  return cal.tLin;
 }
 
-double bmp390Press(uint32_t up) {
-  const double t = tLin, t2 = t * t, t3 = t2 * t, u = static_cast<double>(up);
+double bmp390Press(int idx, uint32_t up) {
+  const Bmp390Cal& cal = cals[idx];
+  const double t = cal.tLin, t2 = t * t, t3 = t2 * t, u = static_cast<double>(up);
   const double out1 = cal.p5 + cal.p6 * t + cal.p7 * t2 + cal.p8 * t3;
   const double out2 = u * (cal.p1 + cal.p2 * t + cal.p3 * t2 + cal.p4 * t3);
   const double u2 = u * u;
@@ -134,12 +137,16 @@ void sensorsBegin() {
     }
   }
 
-  // BMP390 at 0x77/0x76, chip id 0x60.
+  // BMP390 at 0x77/0x76, chip id 0x60. A second one at the other address is
+  // the backup kit's barometer 2.
   for (uint8_t b : {0x77, 0x76}) {
-    if (readId(b, 0x00) == 0x60 && bmp390Init(b)) {
+    if (readId(b, 0x00) != 0x60) continue;
+    if (!g_sensors.baro && bmp390Init(0, b)) {
       g_sensors.baro = true;
       g_sensors.baroAddr = b;
-      break;
+    } else if (g_sensors.baro && bmp390Init(1, b)) {
+      g_sensors.baro2 = true;
+      g_sensors.baro2Addr = b;
     }
   }
 
@@ -181,18 +188,29 @@ gr::Vec3 toBody(const gr::Vec3& v) {
                   g_settings.imuSign[2] * s[g_settings.imuAxis[2]]};
 }
 
-bool baroRead(float& pressurePa, float& tempC) {
-  if (!g_sensors.baro) return false;
+namespace {
+bool bmp390Read(int idx, uint8_t addr, uint32_t& errors, float& pressurePa, float& tempC) {
   uint8_t st = 0;
-  if (!readRegs(g_sensors.baroAddr, 0x03, &st, 1)) { ++g_sensors.baroErrors; return false; }
+  if (!readRegs(addr, 0x03, &st, 1)) { ++errors; return false; }
   if ((st & 0x60) != 0x60) return false;  // pressure and temperature data ready
   uint8_t d[6];
-  if (!readRegs(g_sensors.baroAddr, 0x04, d, 6)) { ++g_sensors.baroErrors; return false; }
+  if (!readRegs(addr, 0x04, d, 6)) { ++errors; return false; }
   const uint32_t up = d[0] | (d[1] << 8) | (static_cast<uint32_t>(d[2]) << 16);
   const uint32_t ut = d[3] | (d[4] << 8) | (static_cast<uint32_t>(d[5]) << 16);
-  tempC = static_cast<float>(bmp390Temp(ut));
-  pressurePa = static_cast<float>(bmp390Press(up));
+  tempC = static_cast<float>(bmp390Temp(idx, ut));
+  pressurePa = static_cast<float>(bmp390Press(idx, up));
   return pressurePa > 1000.0f && pressurePa < 120000.0f;
+}
+}  // namespace
+
+bool baroRead(float& pressurePa, float& tempC) {
+  if (!g_sensors.baro) return false;
+  return bmp390Read(0, g_sensors.baroAddr, g_sensors.baroErrors, pressurePa, tempC);
+}
+
+bool baro2Read(float& pressurePa, float& tempC) {
+  if (!g_sensors.baro2) return false;
+  return bmp390Read(1, g_sensors.baro2Addr, g_sensors.baro2Errors, pressurePa, tempC);
 }
 
 bool highGRead(gr::Vec3& accel) {

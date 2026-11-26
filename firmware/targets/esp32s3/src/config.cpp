@@ -8,9 +8,11 @@ PodSettings g_settings;
 
 namespace {
 const char* kNs = "grpod";
-const uint32_t kVersion = 3;
-// v2 is v3 without the trailing mainAltM: load it as a prefix.
+const uint32_t kVersion = 4;
+// Older versions are prefixes of this one: load what they have, keep the
+// defaults for fields added since.
 const size_t kV2Size = offsetof(PodSettings, mainAltM);
+const size_t kV3Size = offsetof(PodSettings, mainSense);
 
 String axisString() {
   String s;
@@ -51,8 +53,10 @@ void settingsLoad() {
   const size_t len = p.getBytesLength("blob");
   if (ver == kVersion && len == sizeof(PodSettings)) {
     p.getBytes("blob", &g_settings, sizeof(PodSettings));
+  } else if (ver == 3 && len == kV3Size) {
+    p.getBytes("blob", &g_settings, kV3Size);
   } else if (ver == 2 && len == kV2Size) {
-    p.getBytes("blob", &g_settings, kV2Size);  // newer fields keep their defaults
+    p.getBytes("blob", &g_settings, kV2Size);
   }
   p.end();
 }
@@ -79,12 +83,15 @@ gr::Params settingsToParams() {
   p.winch.direction[1] = g_settings.winchDirR;
   p.safety.fenceRadius = g_settings.fenceRadius;
   p.det.mainAlt = g_settings.mainAltM;
+  p.det.mainSense = g_settings.mainSense;
   return p;
 }
 
 void settingsPrint(Print& out) {
   out.printf("canopy.airspeed  %.2f m/s\n", g_settings.canopyAirspeed);
   out.printf("canopy.sink      %.2f m/s\n", g_settings.canopySink);
+  out.printf("sense.main       %u (%s)\n", g_settings.mainSense,
+             g_settings.mainSense == 0 ? "ignored" : g_settings.mainSense == 1 ? "counts as evidence" : "required");
   out.printf("canopy.mainalt   %.0f m%s\n", g_settings.mainAltM,
              g_settings.mainAltM > 0.0f ? " (dual deploy)" : " (0: single deploy, parafoil out at apogee)");
   out.printf("canopy.turngain  %.3f rad/s per unit brake\n", g_settings.canopyTurnGain);
@@ -110,6 +117,10 @@ bool settingsSet(const String& name, const String& value, String& err) {
   };
   if (name == "canopy.airspeed") { if (!range(3, 16)) return false; g_settings.canopyAirspeed = f; }
   else if (name == "canopy.sink") { if (!range(1, 9)) return false; g_settings.canopySink = f; }
+  else if (name == "sense.main") {
+    if (i < 0 || i > 2 || value.length() != 1) { err = "0 ignore, 1 evidence, 2 required"; return false; }
+    g_settings.mainSense = static_cast<uint8_t>(i);
+  }
   else if (name == "canopy.mainalt") { if (!range(0, 3000)) return false; g_settings.mainAltM = f; }
   else if (name == "canopy.turngain") { if (!range(0.2f, 2.0f)) return false; g_settings.canopyTurnGain = f; }
   else if (name == "winch.travel") { if (!range(20, 300)) return false; g_settings.winchTravelMm = f; }

@@ -44,6 +44,16 @@ jobs:
           name: gate-reports
           path: reports/
 
+  watchdog:
+    name: Motor-driver watchdog (ngspice)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ngspice
+        run: sudo apt-get update && sudo apt-get install -y ngspice
+      - name: Simulate the watchdog against its requirements
+        run: hardware/watchdog/run_checks.sh --mc 40
+
   formal:
     name: TLA+ model check and trace validation
     runs-on: ubuntu-latest
@@ -97,7 +107,7 @@ jobs:
     # Publishes https://<owner>.github.io/<repo>/ from main, only after every
     # gate has passed. Pages source: "GitHub Actions" (repo Settings -> Pages).
     if: github.ref == 'refs/heads/main'
-    needs: [software-gates, formal, firmware]
+    needs: [software-gates, formal, firmware, watchdog]
     runs-on: ubuntu-latest
     permissions:
       contents: read

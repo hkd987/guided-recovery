@@ -12,6 +12,9 @@ struct SensorStatus {
   uint8_t imuAddr = 0, gyroAddr = 0;
   bool baro = false;
   uint8_t baroAddr = 0;
+  bool baro2 = false;        // backup kit: second BMP390 at the other address
+  uint8_t baro2Addr = 0;
+  uint32_t baro2Errors = 0;
   bool highG = false;
   uint32_t imuErrors = 0, baroErrors = 0;
 };
@@ -28,6 +31,7 @@ gr::Vec3 toBody(const gr::Vec3& v);
 
 // Returns true when a new pressure sample is available.
 bool baroRead(float& pressurePa, float& tempC);
+bool baro2Read(float& pressurePa, float& tempC);  // backup kit's second barometer
 
 // Optional ADXL375, m/s^2 in the sensor frame.
 bool highGRead(gr::Vec3& accel);

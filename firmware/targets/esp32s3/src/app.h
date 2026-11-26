@@ -9,6 +9,7 @@ struct Snapshot {
   gr::Status status;
   gr::Vec3 accelBody, gyroBody;
   float pressurePa = 0.0f;
+  float pressurePa2 = 0.0f;  // backup kit's second barometer
   float tempC = 0.0f;
   float batteryV = 0.0f;
   int32_t encoder[2] = {0, 0};

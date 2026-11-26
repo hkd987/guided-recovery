@@ -19,7 +19,8 @@ this OS onto it.
 | Stress | Harsher than the design envelope: canopy model 20–30% off, turbulence and thermals, harness twist, poor GPS | `grsim stress`, 5,500 flights | **SAFE** no early steering, no crashes. Accuracy 55–95% per condition; the canopy model matters most (see FEASIBILITY.md) |
 | 4 | The real board flies simulated flights with its real winches | `grhil` over USB, 200 Hz | **Harness ready.** PASS with a stand-in board (20 flights, every frame answered); needs a real board |
 | 5–8 | Ground deploys, drop tests, flights | Field | Not started (needs hardware) |
-| Formal | Guardrails hold for **every** possible sensor/fault/restart sequence | TLA+ model checked with TLC; C++ traces validated against it | **PASS** 17 properties, 78,464 states; 2,707/2,707 C++ steps conform |
+| Formal | Guardrails hold for **every** possible sensor/fault/restart sequence | TLA+ model checked with TLC; C++ traces validated against it | **PASS** 17 properties, 157,056 states, 7/7 injected bugs caught; 3,857/3,857 C++ steps conform |
+| Backup kit | Optional second barometer, second GPS, "main fired" sense line; standard motor-driver watchdog | Gate 2 faults with and without the kit; watchdog circuit in ngspice | **PASS** every barometer and GPS fault ends as specified (400 runs each, two batches); watchdog meets its timing in 2,085 circuit simulations |
 
 Firmware for the ESP32-S3 (pod and LoRa ground receiver) **compiles**. It has
 **not yet run on hardware**. See [docs/FEASIBILITY.md](docs/FEASIBILITY.md)
@@ -39,6 +40,7 @@ verification/           TLA+ model of the decision logic, model checking + trace
 tools/report.py         HTML report from gate outputs
 logs/real/              real flight-log CSVs (yours, plus 3 MIT-licensed); CI replays them
 logs/public/            manifest of 135 public real flight-log files CI downloads for gate 3
+hardware/watchdog/      motor-driver watchdog circuit: ngspice netlist and requirement checks
 docs/                   build guide, wiring, architecture, feasibility
 ```
 
@@ -94,6 +96,10 @@ pio device monitor -b 115200    # then type: selftest
 ## Guardrails (enforced in `firmware/core/src/flight_core.cpp`)
 
 - Motors are unpowered until the canopy is confirmed open. Steering never arms before that.
+  A hardware watchdog enforces it independently: the motor driver sleeps unless the flight
+  loop keeps toggling a pin, and it only does so while the motors may run.
+- A canopy is only confirmed when the barometer, and GPS's own descent rate (when it has a fix),
+  both show canopy-speed descent. A barometer that can't be believed blocks it.
 - The only possible target is the home point the pod saves itself on the pad. It is frozen at launch.
 - Losing GPS, leaving the geofence, a jammed winch, a lopsided canopy or a low battery ends guidance in a slow spiral.
 - A canopy collapse releases both brakes.

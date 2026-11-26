@@ -31,6 +31,11 @@ void printStatus(const Snapshot& s) {
   Serial.printf("winch L %.1f mm  R %.1f mm  (counts %ld / %ld)\n", st.winchMm[0], st.winchMm[1],
                 static_cast<long>(s.encoder[0]), static_cast<long>(s.encoder[1]));
   const FlashLogInfo li = flashLogInfo();
+  const uint8_t bh = st.baroHealth;
+  Serial.printf("baro %s%s%s  gps2 %s%s\n", st.baroTrusted ? "trusted" : "NOT TRUSTED",
+                (bh & 8) ? ((bh & 2) ? ", baro 2 FAILED" : ", baro 2 ok") : ", single",
+                (bh & 1) ? ", baro 1 FAILED" : ((bh & 4) ? ", DISAGREE" : ""),
+                st.gps2Present ? "fitted" : "none", st.gps2Present ? (st.gpsActive ? " (in use)" : " (standby)") : "");
   Serial.printf("battery %.2f V  log %lu/%lu records  loop max %lu us, overruns %lu\n", s.batteryV,
                 static_cast<unsigned long>(li.used), static_cast<unsigned long>(li.capacity),
                 static_cast<unsigned long>(s.maxLoopUs), static_cast<unsigned long>(s.overruns));
@@ -90,6 +95,12 @@ void selftest() {
   else if (s.pressurePa < 50000.0f || s.pressurePa > 110000.0f) fail("barometer pressure implausible");
   else pass("barometer BMP390");
   if (g_sensors.highG) pass("high-g ADXL375 (optional)");
+  if (g_sensors.baro2) {
+    // Two BMP390s on the same bench should agree within their absolute
+    // accuracy (about 50 Pa each); the pod learns the exact offset on the pad.
+    if (fabsf(s.pressurePa2 - s.pressurePa) > 300.0f) fail("second barometer disagrees by more than 300 Pa");
+    else pass("second barometer BMP390 (backup kit) agrees with the first");
+  }
 
   // GPS
   if (!g_gps.configured) fail("GPS did not answer (check RX/TX wiring and 3.3 V)");
@@ -98,6 +109,11 @@ void selftest() {
                   static_cast<unsigned long>(g_gps.fixes), s.status.numSv);
     if (s.status.gpsGood) pass("GPS 3D fix");
     else warn("no GPS fix yet (needs open sky; can take a minute)");
+  }
+
+  if (g_gps2.seen) {
+    Serial.printf("  INFO  second GPS (backup kit): %lu fixes\n", static_cast<unsigned long>(g_gps2.fixes));
+    pass("second GPS answering");
   }
 
   // Battery
@@ -113,7 +129,24 @@ void selftest() {
   if (radioOk()) pass("LoRa radio");
   else warn("LoRa radio did not start (telemetry only; flight is unaffected)");
 
+  // Motor-driver watchdog: with its pet signal blocked, a winch must not move.
+  Serial.println("  ....  watchdog: asking the left winch for 15 mm with the watchdog signal blocked");
+  appZeroWinches();
+  delay(100);
+  watchdogInhibit(true);
+  {
+    float reached = 0, speed = 0;
+    jogAndMeasure(0, 15.0f, reached, speed);
+    if (fabsf(reached) > 2.0f)
+      fail("motor-driver watchdog: the winch moved without the watchdog signal (watchdog missing, or SLP tied to 3.3 V)");
+    else
+      pass("motor-driver watchdog holds the motors off");
+  }
+  watchdogInhibit(false);
+  appBenchRelease();
+
   // Winches: pull 25 mm in, then release; check direction, speed, no jam.
+  // (These also prove the watchdog wakes the driver while it is petted.)
   Serial.println("  ....  winches: each pulls 25 mm then releases. Keep fingers clear.");
   appZeroWinches();
   delay(100);

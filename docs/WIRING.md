@@ -13,21 +13,27 @@ its own LoRa amplifier, PSRAM and GNSS connector, so it needs a different map.
 | GPS power | GPS VCC / GND | 5 V rail or 3.3 V | per the module listing: most FPV M10 modules (HGLRC M100 Mini included) take 5 V; put a 3.3 V-only module on the 3.3 V pin |
 | Left motor | DRV8833 AIN1 / AIN2 | **47 / 48** | 20 kHz PWM. AOUT1 / AOUT2 → left gearmotor |
 | Right motor | DRV8833 BIN1 / BIN2 | **5 / 6** | BOUT1 / BOUT2 → right gearmotor |
-| Motor power | DRV8833 VM / GND | 2S + / GND | GND shared with the Heltec. Leave SLP as the breakout ships it (pulled high = awake) |
+| Motor power | DRV8833 VM / GND | 2S + / GND | GND shared with the Heltec |
+| Motor-driver watchdog | watchdog circuit in → out to DRV8833 **SLP** | **20** | standard on every pod: [WATCHDOG.md](WATCHDOG.md). The breakout's SLP has **no** pull-up (the chip pulls it low inside), so without this circuit the driver never wakes; a pod built without it must tie SLP to 3.3 V instead |
 | Left encoder | A / B | **4 / 7** | power encoders from **3.3 V** (outputs pull up to their supply) |
 | Right encoder | A / B | **2 / 26** | GPIO 26 is free on the V3 only |
 | Arming | reed switch to GND | **34** | magnet on = switch closed = disarmed (bench mode) |
 | Main-fired input (optional) | opto-isolator output to GND | **33** | never connect to the host's igniter circuit directly |
 | Buzzer | NPN base (via 1 kΩ) | **40** | magnetic buzzer: add a flyback diode |
 | Battery sense | 2S+ → 100 kΩ → GPIO → 33 kΩ → GND | **3** | calibrate with `set batt.scale` |
+| *Backup kit:* second barometer | BMP390 SDA / SCL on the same bus | **41 / 42** | set it to the **other** I2C address: on the Adafruit 4816, solder SDO to GND (0x76) on one board only. The firmware finds it on its own |
+| *Backup kit:* second GPS → ESP32 | GPS 2 **TX** | **19** | UART2 RX |
+| *Backup kit:* ESP32 → second GPS | GPS 2 **RX** | **39** (shared with GPS 1) | one TX line configures both receivers |
 | Onboard LED | — | 35 | built in |
 | OLED | — | 17 / 18 / 21, Vext 36 | built in |
 | LoRa SX1262 | — | 8–14 | built in |
 
-Spare: 19, 20 (USB D−/D+ pads), 45, 46. 45 and 46 are strapping pins, so
-don't put pulled-up encoder inputs on them. Not spare even though they reach
-the header: 0 (PRG button), 1 and 37 (the board's own battery sense), 21
-(OLED reset), 43 / 44 (USB serial), 36 (Vext).
+Spare: 45 and 46 only. They are strapping pins: nothing that pulls them up
+at power-on (GPIO 45 high would select 1.8 V flash and stop the board
+booting). GPIO 19 and 20 (the USB D−/D+ pads, unused on the V3, which talks
+USB through its own serial chip) carry the second GPS and the watchdog. Not
+spare even though they reach the header: 0 (PRG button), 1 and 37 (the
+board's own battery sense), 21 (OLED reset), 43 / 44 (USB serial), 36 (Vext).
 
 Checked against the Arduino core's Heltec V3 variant and Meshtastic's V3
 definition: no pod pin clashes with the onboard LoRa radio, OLED, LED, USB
@@ -37,7 +43,9 @@ ESP32-S3FN8 has no PSRAM (on PSRAM chips those pins are taken).
 **Vext (GPIO 36) must stay low.** It powers the OLED and the LoRa front end;
 the firmware never turns it off.
 
-**Motors stay off while the board boots.** The DRV8833 inputs have internal
+**Motors stay off while the board boots.** Two independent reasons: the
+watchdog circuit holds the driver asleep until the flight loop has been
+toggling GPIO 20 for a few cycles, and the DRV8833 inputs have internal
 pull-downs, so while the ESP32 pins float during reset both bridges coast.
 Check it once: power the pod with the lines attached and watch that neither
 spool moves until you command it.

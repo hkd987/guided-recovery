@@ -82,6 +82,19 @@ Spools turn freely, no brake lines attached.
 | Ground receiver (second Heltec) 100 m away | phase and height on its screen | both on the same `radio.mhz` |
 | `selftest` (loop timing) | max loop well under 5 ms, 0 overruns | report it: something is blocking the flight task |
 
+## 6b. Watchdog and backup kit
+
+| Do | Expect | If not |
+|---|---|---|
+| `selftest` (watchdog line) | `motor-driver watchdog holds the motors off`, then the winch tests pass | see [WATCHDOG.md](WATCHDOG.md); "moved without the watchdog signal" means the circuit is missing or SLP is tied to 3.3 V |
+| Mid-move, unplug the GPIO 20 wire (`winch l 60`, pull the wire) | the winch stops within a quarter of a second | check the watchdog circuit |
+| **Unpowered winch under load:** brakes at 60 mm on the spring scales, unplug the 2S pack | note whether the line pays out | this is what a dead pod does in flight: if the gearbox holds the brake, rig a lighter brake-line tension or accept that a dead pod keeps its last brake (the simulator assumes it pays out above 2.5 N) |
+| Backup kit, second barometer: boot text | `baro BMP390 + second BMP390 (backup kit)` | its SDO pad must go to GND (0x76) so the two addresses differ |
+| `selftest` | `second barometer ... agrees with the first` | over 300 Pa apart: a damaged sensor or a bad solder joint |
+| `status` | `baro trusted, baro 2 ok` | |
+| Backup kit, second GPS outdoors: `status` | `gps2 fitted (standby)` | GPS 2 TX to GPIO 19; its RX shares GPIO 39 with GPS 1 |
+| Sense line: drive the opto LED | `status` shows `main-fired input ON` | then decide `sense.main` 1 or 2 |
+
 ## 7. Rig the lines, then gate 4
 
 1. Rig the brake lines so they are just slack at 0 mm; `zero`, `log erase`, `save`.

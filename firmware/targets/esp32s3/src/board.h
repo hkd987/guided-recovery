@@ -29,6 +29,15 @@ constexpr int kEncL_B = 7;
 constexpr int kEncR_A = 2;
 constexpr int kEncR_B = 26;  // free on the V3 (no PSRAM); not on a V4
 
+// Motor-driver watchdog (standard, see docs/WATCHDOG.md): toggled every
+// control cycle while the motors may run; the circuit holds the DRV8833
+// asleep otherwise.
+constexpr int kWatchdogPet = 20;
+
+// Backup kit: second GPS receiver. Its TX goes to GPIO 19 (UART2 RX); its RX
+// shares GPIO 39 with GPS 1, so both get the same configuration.
+constexpr int kGps2Rx = 19;
+
 // Switches and indicators.
 constexpr int kArmSwitch = 34;   // reed switch to GND; magnet present = disarmed
 constexpr int kMainFired = 33;   // optional opto-isolated input, active low
