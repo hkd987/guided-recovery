@@ -17,6 +17,7 @@ add_library(grcore STATIC
   firmware/core/src/actuation.cpp
   firmware/core/src/flight_core.cpp
   firmware/core/src/ubx.cpp
+  firmware/core/src/hil.cpp
 )
 target_include_directories(grcore PUBLIC firmware/core/include)
 target_compile_options(grcore PRIVATE ${GR_WARNINGS} -Werror)
@@ -43,6 +44,9 @@ target_link_libraries(grreplay PRIVATE grsimlib)
 
 add_executable(grtrace sim/apps/grtrace.cpp)
 target_link_libraries(grtrace PRIVATE grsimlib)
+
+add_executable(grhil sim/apps/grhil.cpp)
+target_link_libraries(grhil PRIVATE grsimlib Threads::Threads util)
 
 # ---- Unit tests
 enable_testing()

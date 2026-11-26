@@ -15,6 +15,7 @@
 #include "config.h"
 #include "display.h"
 #include "flashlog.h"
+#include "hilmode.h"
 #include "hw.h"
 #include "radio.h"
 #include "sensors.h"
@@ -42,6 +43,22 @@ void flightTask(void*) {
   float pressure = 0.0f, tempC = 0.0f;
   gr::Inputs in;
   for (;;) {
+    if (hilActive()) {
+      // Bench HIL: the PC's frames pace the loop; poll every millisecond.
+      hilService();
+      gr::LogRecord hrec;
+      if (core->takeLogRecord(hrec)) flashLogPush(hrec);
+      gr::TelemetryPacket htp;
+      if (core->takeTelemetry(htp)) radioPush(htp);
+      if (++snapDiv >= 50 && xSemaphoreTake(snapMutex, 0) == pdTRUE) {
+        snapDiv = 0;
+        snap.status = core->status();
+        xSemaphoreGive(snapMutex);
+      }
+      vTaskDelay(1);
+      last = xTaskGetTickCount();
+      continue;
+    }
     vTaskDelayUntil(&last, pdMS_TO_TICKS(5));
     const uint32_t t0 = micros();
 
@@ -182,6 +199,12 @@ void appZeroWinches() {
   portEXIT_CRITICAL(&reqMux);
 }
 
+bool appEnterHil() {
+  // The flight task owns the core; switching is safe because the console only
+  // allows it while disarmed and the core keeps running unchanged.
+  return hilEnter(*core);
+}
+
 void appReconfigure() {
   portENTER_CRITICAL(&reqMux);
   reconfigReq = true;
@@ -219,6 +242,7 @@ void appStart() {
 }
 
 void setup() {
+  Serial.setRxBufferSize(1024);  // HIL frames arrive at 200 Hz
   Serial.begin(115200);
   delay(200);
   Serial.println("\nGuided Recovery OS - S pod (Heltec V3)");

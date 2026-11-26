@@ -5,6 +5,7 @@
 #include "app.h"
 #include "config.h"
 #include "flashlog.h"
+#include "hilmode.h"
 #include "hw.h"
 #include "radio.h"
 #include "sensors.h"
@@ -161,6 +162,7 @@ void help() {
       "save | defaults     store settings / restore defaults\n"
       "log info|dump|erase flight log (dump prints CSV)\n"
       "gps                 GPS diagnostics\n"
+      "hil                 bench hardware-in-the-loop with sim/apps/grhil (reboot to leave)\n"
       "reboot");
 }
 
@@ -234,6 +236,10 @@ void handle(const String& cmdline) {
                   static_cast<unsigned long>(p.framesOk()), static_cast<unsigned long>(p.framesBad()),
                   static_cast<unsigned long>(g_gps.fixes), p.fix().fixType, p.fix().numSv, p.fix().hAcc);
   }
+  else if (verb == "hil") {
+    if (!disarmed(s)) { Serial.println("HIL refused: armed. Put the magnet on first."); return; }
+    appEnterHil();
+  }
   else if (verb == "reboot") ESP.restart();
   else Serial.println("unknown command; type 'help'");
 }
@@ -241,6 +247,7 @@ void handle(const String& cmdline) {
 }  // namespace
 
 void cliPoll() {
+  if (hilActive()) return;  // the serial port carries HIL frames now
   while (Serial.available()) {
     const char c = static_cast<char>(Serial.read());
     if (c == '\r') continue;

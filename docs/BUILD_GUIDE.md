@@ -108,7 +108,35 @@ control loop), and `save`.
 Other console commands: `status`, `watch`, `winch l 40`, `winch release`,
 `params`, `set`, `log info`, `log dump`, `gps`, `help`.
 
-## 5. At the pad
+## 5. Bench hardware-in-the-loop (gate 4)
+
+Before anything flies, let the real board fly simulated flights. The PC sends
+simulated IMU, barometer and GPS readings over USB 200 times a second. The
+board makes every decision, its **real winches move**, and their encoder
+positions steer the simulated canopy.
+
+1. Mount the pod upright on the bench. Tie each brake line to a spring scale or
+   bungee, so the winches pull against roughly flight load (about 4 N at full
+   travel for the S pod).
+2. Connect USB with the magnet **on**. Build the PC tool (`cmake ... && cmake
+   --build build`), then run:
+   ```sh
+   ./build/grhil --port /dev/ttyUSB0 --flights 3 --out gate4.json
+   ```
+   The tool types `hil` into the console for you.
+3. Remove the board's magnet to let the winches move. While it is on, the
+   motors are held off and the tool reports a FAIL.
+4. Each flight runs in real time, about 1–4 minutes. Gate 4 passes when:
+   - every frame is answered;
+   - the board never needs more than 5 ms for a frame;
+   - every flight lands, and the board detects the landing;
+   - nothing steers before the canopy opens.
+5. Reboot the board to leave HIL mode.
+
+`./build/grhil --loopback` runs the same thing against a stand-in board on
+the PC. CI runs that on every push.
+
+## 6. At the pad
 
 1. Pack the parafoil and pod as rehearsed in ground deployment tests (gate 5).
 2. Pull the magnet. The pod is now **armed**.
@@ -121,7 +149,7 @@ After landing, the buzzer sounds every 2 s. Put the magnet back on, connect
 USB, and run `log dump` to get the CSV. Keep every log: from gate 5 on, the
 pod's own logs become the real replay test suite.
 
-## 6. Before the first flight
+## 7. Before the first flight
 
 Fly the gates in order: bench HIL (4), ground deploys (5), drop tests (6),
 low-power (7), high-power (8). Fly under your club's rules and NAR/Tripoli

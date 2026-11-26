@@ -72,6 +72,31 @@ stateDiagram-v2
   - jammed winch: toward the jammed side if it is stuck pulled in;
   - lopsided canopy: counter-braked so the turn stays slow.
 
+## Restart recovery
+
+Every cycle the ESP32 target copies a 40-byte checksummed `ResumeState` into
+RTC memory, which survives brownout, watchdog and crash resets but not
+power-off. It holds the stage, home point, ground pressure, faults and winch
+positions.
+
+After such a reset, `FlightCore::resume()` acts on the saved stage:
+
+| Saved stage | What it does |
+|---|---|
+| Ascent, Descent | Continues detecting, with the saved home point |
+| Canopy | Neutral: both brakes released, no more steering that flight |
+| Anything else | Ordinary boot |
+
+## Hardware in the loop (gate 4)
+
+`gr::hil` (core) defines the USB frames and the board side of the loop
+(`HilBoard`). The ESP32 target and `grhil`'s stand-in board run that same
+code, so the protocol is tested without hardware.
+
+Each frame the PC sends sensors, and the board answers with motor commands and
+real encoder counts. The board's magnet is a physical interlock: the winches
+only move once it is removed.
+
 ## Simulator (sim/)
 
 | Piece | What it models |

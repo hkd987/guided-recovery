@@ -104,10 +104,11 @@ What the sweep says:
 | Log space | 64-byte records at 50 Hz in flight (5 Hz on the pad) in 5.4 MB | About 28 min of flight-rate logging |
 | Control loop | 200 Hz on core 1; flight core math is cheap. Flash writes are page programs only (< 1 ms) | To be measured on hardware (`status` shows loop max and overruns) |
 
-## Bugs the gates caught before any hardware existed
+## Bugs caught before any hardware existed
 
-Each item was found by a failing Monte Carlo run, traced in a single-flight
-replay, and fixed. This is the point of software-first testing.
+Items 1–8 were each found by a failing Monte Carlo run, traced in a
+single-flight replay, and fixed. Items 9–11 came from the TLA+ model, the
+gate-4 harness and code review. This is the point of software-first testing.
 
 1. **Steering on GPS course fails when wind aloft beats the canopy.** At 700 m
    with 9–10 m/s of wind, the pod circled. Fix: heading is now derived with no
@@ -135,12 +136,31 @@ replay, and fixed. This is the point of software-first testing.
 8. **Height overestimated at high-elevation fields.** Measuring height from
    ground pressure alone overestimated it by 3.6% at 800 m. Fix: difference of
    standard-atmosphere altitudes.
+9. **A launch stayed "pending" after landing** (found by the TLA+ model).
+   Re-arming without a power cycle at a field 10 m or more above the old
+   reference jumped straight to ascent, so the second flight could never learn
+   a home point. Fix: clear all per-flight state on every disarm.
+10. **The ground reference lagged after moving the pod** (found by the gate-4
+    harness). While disarmed, the barometer reference followed pressure on a
+    10 s filter. Arming soon after moving to a new elevation left height off by
+    up to hundreds of metres, so the pod never detected its landing. Fix: the
+    reference tracks exactly while disarmed, and arming re-zeroes the
+    altimeter.
+11. **A mid-flight processor restart left a brake pulled** (found by review).
+    A brownout or watchdog reset rebooted the pod into "pad" with the winches
+    frozen wherever they were; a brake held on one side would spiral the canopy
+    down. Fix: a checksummed snapshot in RTC memory.
+    - Restart during ascent or descent: carry on with the saved home point.
+    - Restart under canopy: release both brakes.
+
+    The TLA+ model includes restarts at any point (property
+    `NoSteeringAfterCanopyRestart`).
 
 ## Not proven yet
 
 | Gate / question | Status |
 |---|---|
-| Gate 4 (HIL) | Needs the bench rig. The flight core already runs unchanged on desktop and ESP32, so the same scenarios can drive the real board over USB |
+| Gate 4 (HIL) | Harness built and passing with a stand-in board: 20 flights, every frame answered, under 1 ms per frame on the PC. The serial path was also tested in real time over a pseudo-terminal. Needs a real board and winches on the bench |
 | Gate 5 (ground deploy) and the spec's first open question: does a parafoil open cleanly after a hard ejection? | Simulation assumes it opens in 0.8–2.5 s |
 | Gate 6 (drop tests) | The canopy model is the spec's "simple model" and needs fitting to real turn, glide and sink data. Every result above assumes canopies within about ±6% airspeed/sink and ±15% turn gain of the tested design |
 | Pod-mounted IMU vs. airframe logs (spec open question) | Replay proves the logic, not the thresholds |

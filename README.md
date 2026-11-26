@@ -16,8 +16,9 @@ this OS onto it.
 | 1 | Guidance law lands the canopy | Simple parafoil model, perfect knowledge | **PASS** 97.8% within 30 m (1,000 runs, winds to 10 mph) |
 | 2 | The real flight code does it with real-world sensors | Flight core + sensor/winch models, pad to touchdown | **PASS** 94.5% within 30 m; every injected fault ends as specified |
 | 3 | Deployment detector catches the main, ignores boost/coast/drogue | Log replay | **PASS on synthetic logs** (191/191, 0 false); real logs still needed |
-| 4–8 | Hardware in the loop, ground deploys, drop tests, flights | Bench and field | Not started (needs hardware) |
-| Formal | Guardrails hold for **every** possible sensor/fault sequence | TLA+ model checked with TLC; C++ traces validated against it | **PASS** 16 properties, 35,008 states; 2,400/2,400 C++ steps conform |
+| 4 | The real board flies simulated flights with its real winches | `grhil` over USB, 200 Hz | **Harness ready.** PASS with a stand-in board (20 flights, every frame answered); needs a real board |
+| 5–8 | Ground deploys, drop tests, flights | Field | Not started (needs hardware) |
+| Formal | Guardrails hold for **every** possible sensor/fault/restart sequence | TLA+ model checked with TLC; C++ traces validated against it | **PASS** 17 properties, 78,464 states; 2,707/2,707 C++ steps conform |
 
 Firmware for the ESP32-S3 (pod and LoRa ground receiver) **compiles**. It has
 **not yet run on hardware**. See [docs/FEASIBILITY.md](docs/FEASIBILITY.md)
@@ -31,6 +32,7 @@ firmware/targets/esp32s3/  Heltec V3 drivers, 200 Hz flight task, console, self-
 sim/                    simulator: rocket, wind, parafoil, winch motors, sensor models, faults
 sim/apps/grsim.cpp      Monte Carlo runner for gates 1 and 2 (+ canopy sweep, synthetic logs)
 sim/apps/grreplay.cpp   gate 3: replays host flight-computer logs through the detector
+sim/apps/grhil.cpp      gate 4: hardware in the loop over USB (or --loopback with a stand-in board)
 tests/                  unit tests
 verification/           TLA+ model of the decision logic, model checking + trace validation
 tools/report.py         HTML report from gate outputs
@@ -82,4 +84,5 @@ pio device monitor -b 115200    # then type: selftest
 - The only possible target is the home point the pod saves itself on the pad. It is frozen at launch.
 - Losing GPS, leaving the geofence, a jammed winch, a lopsided canopy or a low battery ends guidance in a slow spiral.
 - A canopy collapse releases both brakes.
+- A processor restart in flight resumes from a snapshot kept in RTC memory. Under a canopy it resumes with both brakes released.
 - The pod never connects to, and never fires, any pyrotechnic channel.

@@ -26,3 +26,4 @@ void appBenchSet(int channel, float frac);
 void appBenchRelease();
 void appZeroWinches();
 void appReconfigure();  // rebuild flight parameters from the saved settings
+bool appEnterHil();     // gate-4 bench mode (see hilmode.h)

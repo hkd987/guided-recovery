@@ -26,6 +26,8 @@ jobs:
           ./build/grsim synth-logs --count 200 --out logs/synthetic
           shopt -s nullglob
           ./build/grreplay --min-flights 100 --out reports/gate3.csv logs/synthetic/*.csv logs/real/*.csv
+      - name: Gate 4 harness self-test (stand-in board over a socket)
+        run: ./build/grhil --loopback --flights 20 --out reports/gate4_loopback.json
       - name: Report
         if: always()
         run: python3 tools/report.py reports reports/index.html || true

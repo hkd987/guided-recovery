@@ -312,14 +312,19 @@ const Outputs& FlightCore::update(const Inputs& in) {
   if (in.baroFresh && in.pressurePa > 1000.0f) {
     const float bdt = lastBaroT_ < 0.0f ? 0.02f : t_ - lastBaroT_;
     lastBaroT_ = t_;
-    if (!st_.groundRefValid) {
+    if (!st_.groundRefValid || st_.stage == FlightStage::Disarmed) {
+      // Disarmed (bench, car, walk to the pad): height is relative to wherever
+      // the pod is now, so arming always starts from zero at the pad. A slow
+      // filter here once left the reference hundreds of metres off after a
+      // move between fields (found by the gate-4 HIL harness).
       groundP_.reset(in.pressurePa);
       st_.groundRefValid = true;
-    } else if (st_.stage <= FlightStage::Pad && !det_.launchCandidate()) {
+      alt_.reset(0.0f);
+    } else if (st_.stage == FlightStage::Pad && !det_.launchCandidate()) {
       groundP_.update(in.pressurePa, bdt);
     }
     st_.groundPressure = groundP_.value();
-    alt_.update(pressureToAltitude(in.pressurePa, st_.groundPressure));
+    if (st_.stage != FlightStage::Disarmed) alt_.update(pressureToAltitude(in.pressurePa, st_.groundPressure));
   }
   st_.agl = alt_.altitude();
   st_.climbRate = alt_.climbRate();

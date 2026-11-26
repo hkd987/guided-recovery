@@ -1,6 +1,8 @@
 // Unit tests for the flight core.
 #include <cmath>
+#include <cstring>
 #include <random>
+#include <vector>
 
 #include "gr/actuation.hpp"
 #include "gr/estimators.hpp"
@@ -337,4 +339,88 @@ TEST(detector_rearm_after_flight_starts_fresh) {
   CHECK(!d.launchCandidate());
   for (int i = 0; i < 400; ++i) step(true, 1.0f, 12.0f, 0.0f);                  // re-armed 12 m higher
   CHECK(d.stage() == FlightStage::Pad);
+}
+
+// ---- HIL protocol (gate 4)
+#include "gr/hil.hpp"
+
+TEST(hil_frames_roundtrip_and_resync) {
+  Inputs in;
+  in.tUs = 123456789ULL;
+  in.imu.accel = Vec3{0.1f, -0.2f, -9.80665f};
+  in.imu.gyro = Vec3{0.012f, -0.5f, 1.25f};
+  in.baroFresh = true;
+  in.pressurePa = 84123.5f;
+  in.armed = true;
+  hil::SensorFrame f = hil::toSensorFrame(in);
+  uint8_t buf[64];
+  const size_t n = hil::encode(hil::kTypeSensor, &f, sizeof f, buf, sizeof buf);
+  CHECK(n == sizeof f + hil::kOverhead);
+  hil::Decoder d;
+  const uint8_t noise[] = {0x00, 0xA5, 0x53, 0xFF, 0x13};  // junk, including a fake sync
+  for (uint8_t b : noise) d.feed(b);
+  bool got = false;
+  for (size_t i = 0; i < n; ++i) got = d.feed(buf[i]) || got;
+  CHECK(got && d.type() == hil::kTypeSensor && d.length() == sizeof f);
+  hil::SensorFrame back;
+  std::memcpy(&back, d.payload(), sizeof back);
+  Inputs out;
+  hil::applySensorFrame(back, out);
+  CHECK_NEAR(out.imu.accel.z, -9.80665, 0.01);
+  CHECK_NEAR(out.imu.gyro.z, 1.25, 0.001);
+  CHECK_NEAR(out.pressurePa, 84123.5, 1e-3);
+  CHECK(out.baroFresh && out.armed);
+  buf[7] ^= 0x40;  // corrupt a payload byte
+  got = false;
+  for (size_t i = 0; i < n; ++i) got = d.feed(buf[i]) || got;
+  CHECK(!got);
+}
+
+namespace {
+struct FakeIo : hil::BoardIo {
+  std::vector<uint8_t> sent;
+  bool interlock = true;
+  bool lastEnabled = true;
+  void readEncoders(int32_t e[2]) override { e[0] = e[1] = 0; }
+  float batteryVolts() override { return 8.0f; }
+  bool interlockArmed() override { return interlock; }
+  void writeMotors(float, float, bool en) override { lastEnabled = en; }
+  uint32_t micros() override { return t += 7; }
+  void send(const uint8_t* p, size_t n) override { sent.insert(sent.end(), p, p + n); }
+  uint32_t t = 0;
+};
+}  // namespace
+
+TEST(hil_board_answers_every_frame_and_honours_interlock) {
+  FlightCore core;
+  hil::HilBoard board(core);
+  FakeIo io;
+  io.interlock = false;  // magnet on the board: motors must stay off
+  Inputs in;
+  in.imu.valid = true;
+  in.imu.accel = Vec3{0.0f, 0.0f, -kGravity};
+  in.pressurePa = 90000.0f;
+  for (int i = 0; i < 400; ++i) {
+    in.tUs = 1000000ULL + static_cast<uint64_t>(i) * 5000ULL;
+    in.baroFresh = (i % 4) == 0;
+    const hil::SensorFrame f = hil::toSensorFrame(in);
+    uint8_t buf[64];
+    const size_t n = hil::encode(hil::kTypeSensor, &f, sizeof f, buf, sizeof buf);
+    board.onBytes(buf, n, io);
+  }
+  CHECK(board.steps() == 400);
+  CHECK(io.sent.size() == 400 * (sizeof(hil::ActuatorFrame) + hil::kOverhead));
+  CHECK(!io.lastEnabled);
+  hil::Decoder d;
+  int replies = 0;
+  bool interlockFlag = false;
+  for (uint8_t b : io.sent)
+    if (d.feed(b) && d.type() == hil::kTypeActuator) {
+      ++replies;
+      hil::ActuatorFrame a;
+      std::memcpy(&a, d.payload(), sizeof a);
+      interlockFlag = (a.flags & hil::kActInterlock) != 0;
+    }
+  CHECK(replies == 400);
+  CHECK(interlockFlag);
 }

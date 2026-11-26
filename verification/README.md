@@ -30,8 +30,9 @@ CI runs the same script on every push, in the `formal` job.
 
 ## What is proven
 
-TLC explores all **35,008 reachable states** (about 19 million transitions) in
-under a minute.
+TLC explores all **78,464 reachable states** (about 40 million transitions) in
+about two minutes. That includes a processor restart at any moment in flight
+(`WarmReset`: brownout, watchdog or crash, then `FlightCore::resume`).
 
 **Invariants**, true in every state:
 
@@ -46,6 +47,7 @@ under a minute.
 | `SpiralHasReason` | Every spiral has a recorded fault |
 | `PhaseMatchesStage` | What the pod does always agrees with the detected flight stage |
 | `DisarmedMeansNoLaunchPending` | Disarming forgets any suspected launch |
+| `NoSteeringAfterCanopyRestart` | After a restart under canopy, the pod releases the brakes and never steers again that flight |
 
 **Step properties**, true of every transition:
 
@@ -63,17 +65,19 @@ switched off.
 
 ## How we know it isn't vacuous
 
-- **Witnesses.** Seven key situations are shown to be reachable: guiding, GPS
+- **Witnesses.** Nine key situations are shown to be reachable: guiding, GPS
   spiral, collapse, a bench jam carried into flight, no-home spiral, landing
-  without a canopy, and arming with a latched jam. If a property only held
+  without a canopy, arming with a latched jam, releasing after a restart
+  under canopy, and guiding after a restart in descent. If a property only held
   because those states could never happen, a witness would show it.
-- **Mutations.** Five known bugs are re-injected one at a time. TLC catches
-  every one, with a counterexample of 4–6 steps:
+- **Mutations.** Six known bugs are re-injected one at a time. TLC catches
+  every one, with a counterexample of 4–7 steps:
   - `stale_candidate`, the real bug described below;
   - motors powered in descent;
   - home point updated after launch;
   - GPS failsafe removed;
-  - magnet able to disarm in flight.
+  - magnet able to disarm in flight;
+  - steering resumed after a restart under canopy.
 
 ## Is the C++ the same as the model? (trace validation)
 
@@ -82,11 +86,12 @@ switched off.
 - simulated flights (nominal and every fault type), continuing after
   touchdown: line release, magnet on, re-armed at a field 12 m higher;
 - scripted bench sessions: jog, jam, console reset, home learning, handling
-  bumps, disarming with a launch pending, bench commands refused while armed.
+  bumps, disarming with a launch pending, bench commands refused while armed;
+- processor restarts in descent and under canopy.
 
 It records every change of the decision state. `tla/PodTrace.tla` then checks
 that **each recorded change is one step the model allows**. Current result:
-202 traces, 2,400 state changes, 0 disallowed.
+226 traces, 2,707 state changes, 0 disallowed.
 
 When the stale-flag bug was put back into the C++, this check rejected 50
 steps.
